@@ -1,0 +1,13 @@
+[project]
+name = "fly-doom"
+version = "0.1.0"
+description = "Connectome-constrained Doom research experiments"
+requires-python = ">=3.11"
+dependencies = ["numpy>=2,<3", "scipy>=1.14,<2", "pyarrow>=18", "vizdoom>=1.2.4,<2"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
