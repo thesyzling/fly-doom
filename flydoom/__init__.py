@@ -1,1 +1,1 @@
-"""Fly connectome research infrastructure; no trained policy yet."""
+"""Fly connectome data tools and experimental LIF simulation; no trained policy."""

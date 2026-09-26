@@ -32,3 +32,54 @@ Annotation source: [flywire_annotations v2.1.0](https://github.com/flyconnectome
 Complete matching does not mean every field is known: 28,165 neurons have an empty `cell_type` field and 601 have an empty `top_nt` field. Source columns are preserved, and missing values were not filled with guesses. `top_nt` labels are predictions. No excitatory or inhibitory signs have been assigned to connections at this stage.
 
 `python -m pytest -q`: **13 tests passed** after adding ID-type, negative-ID, and annotation-matching checks. These results concern data preparation correctness. Neuron dynamics, visual signal transmission, training, and biological validity have not yet been validated.
+
+## Experimental simulation validation — September 27, 2026
+
+`python -m pytest -q`: **29 tests passed** after adding the LIF kernel and probe. New checks cover analytical constant-drive and synaptic-decay solutions, time-step refinement below threshold, presynaptic sign orientation, excitation and inhibition, transmission delay, complete refractory intervals, state reset, invalid parameters, and connected/disconnected diagnostic comparisons.
+
+`python -m flydoom.brain_probe` completed four 200 ms simulations on the verified 139,255-neuron graph. No-input and disconnected controls behaved as expected. All runs remained numerically finite. The photoreceptor condition changed downstream voltages without generating descending spikes; a separate direct excitatory control produced 1,290 descending spikes. Excessive negative voltage excursions mean that physiological calibration has not passed. These are diagnostic results, not evidence of vision or learning.
+
+Full results, parameter assumptions, and limitations are in [SIMULATION.md](SIMULATION.md). Machine-readable output is `runs/brain-probe/report.json`, with source hashes and separate per-condition spike-count artifacts. Persistent network storage was approximately 119.9 MiB and connected CPU steps averaged approximately 12.5–13.0 ms for each 0.5 ms of simulated time. These measurements exclude load peaks and reporting overhead.
+
+M2 remains incomplete. No Doom visual encoder, neural action controller, or training was added in this stage.
+
+## Recorded experiment viewer — September 27, 2026
+
+Added a local browser viewer with a WebGL point map, four selectable conditions, cell filters, neuron inspection, superclass totals, and a cumulative spike trace. It reads actual saved spike counts and source anchor coordinates, with voxel anisotropy corrected before normalization. It does not animate unrecorded neuron activity or infer mental functions.
+
+`python -m pytest -q -p no:cacheprovider --basetemp <fresh temporary directory>`: **33 tests passed**. Viewer checks cover anisotropic coordinates, exact large neuron IDs, spike totals and binary buffers, modified artifact rejection, incomplete runs, and allowed HTTP routes.
+
+An isolated headless Chrome check loaded all 139,255 points with WebGL error code 0 and no JavaScript exceptions. Switching conditions showed the recorded values: 42,260 photoreceptor-condition spikes with zero descending spikes, and 40,033 excitatory-control spikes with 1,290 descending spikes. Filtering and a 390-pixel mobile layout were exercised; no horizontal overflow was detected. These UI checks do not add evidence of biological validity.
+
+## Temporal playback — September 27, 2026
+
+New probes now capture per-neuron interval spike counts and voltage snapshots. A fresh full-graph run in `runs/replay-check` preserved the previous four conditions' total spike counts. Each condition contains 21 recorded samples, including time zero, at the default 0.5 ms integration step and 10 ms recording interval.
+
+**36 tests passed.** Added checks confirm that recording does not change dynamics, temporal bins sum to neuron totals, initial and final voltages match the model state, a partial final interval is retained, binary replay ordering is correct, inconsistent counts are rejected, and legacy recordings remain readable.
+
+Headless Chrome checks exercised automatic playback, pause, slider seeking, spike/voltage modes, condition switching, and mobile layout. At the 50 ms photoreceptor frame, the viewer read 8,452 interval spikes and 14,349 neurons with a voltage deviation greater than 0.01 mV. Seeking to time zero restored resting voltages; the no-input replay remained at rest. WebGL reported no errors and no JavaScript exceptions were observed. No activity is interpolated or synthesized for display. The physiological and visual-pathway limitations are unchanged.
+
+## Visible Doom demo — September 27, 2026
+
+Added optional game-window rendering, per-tic viewing pace, and action logging to the existing random baseline. No new dependency was required. Headless seeds 42, 43, and 44 retained returns of -340, -355, and 95, with 75, 75, and 2 decisions respectively. A native visible run with seed 44 completed successfully with a 480 × 640 RGB observation, return 95, and 2 decisions; its log showed ATTACK followed by WAIT. Reports are in `runs/doom-visible-change-headless.json` and `runs/doom-visible-check.json`.
+
+**36 tests passed** after this change. The visible demo remains independent of the neural simulation and does not demonstrate learned behavior or brain control of Doom.
+
+## Experimental neural game bridge — September 27, 2026
+
+`flydoom.brain_doom` now reads Doom pixels, stimulates positive visual projection cells, computes the existing full-graph LIF dynamics, and selects buttons from mean descending spike rates. Input and output assignments are deterministic engineering conventions, and the input bypasses the retina. See [BRIDGE.md](BRIDGE.md) for the exact rules. No training or random-action fallback was added.
+
+Real-data and native-engine checks used seed 42, a 50 ms neural window, 40 mV-equivalent maximum image drive, and 4 game tics per decision:
+
+| Run directory under `runs/` | Decisions | Total neural spikes | Descending spikes | Game return | Outcome |
+|---|---:|---:|---:|---:|---|
+| `bridge-connected-check` | 6 | 59,471 | 3,133 | -29 | LEFT and ATTACK selected |
+| `bridge-disconnected-check` | 6 | 53,956 | 0 | -24 | WAIT throughout |
+| `bridge-zero-input-check` | 6 | 0 | 0 | -24 | WAIT throughout |
+| `bridge-visible-check` | 24 | 243,202 | 12,765 | -121 | LEFT, RIGHT, and ATTACK selected |
+
+All four trials reached their explicit decision limits; none constitutes a completed-game success evaluation. The first six visible decisions exactly matched the headless connected trace, including image features, neural counts, action vectors, rewards, and voltage extrema, excluding wall-clock compute time. Connected neural computation took approximately 1.3–1.4 seconds per decision on this CPU. The game holds its frame during computation.
+
+The connected model remained finite in these bounded runs but reached a minimum post-step voltage of approximately **-453.7 mV**, which is not physiologically plausible. This was recorded without clipping. These checks establish software integration and dependence on synaptic transmission, not biological validity, target recognition, learning, or an advantage from the fly graph. M2 remains incomplete.
+
+**44 tests passed** after adding the bridge. New checks cover spatial pixel averaging, normalization by output population size, silence and tie handling, input/transmission ablations on a known circuit, persistent neural state and episode reset, exact ID-based mappings, disjoint inputs and outputs, button-order handling, decision limits, artifact checksums, overwrite protection, and interruption cleanup with partial reports.

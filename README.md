@@ -2,15 +2,15 @@
 
 A research project to train a model based on the real fruit fly connectome to control Doom.
 
-**Status: the real connectivity graph and neuron annotations are ready.** There is no brain simulator or trained policy yet. See the [research, architecture, and experiment plan](docs/RESEARCH.md).
+**Status: an experimental pixel-to-connectome-to-Doom loop now runs.** It uses the real graph and LIF dynamics, with artificial image and action assignments that bypass the retina. Natural visual transmission and physiological calibration still need work. There is no trained policy. See the [bridge guide](docs/BRIDGE.md), [research plan](docs/RESEARCH.md), and [simulation assumptions and results](docs/SIMULATION.md).
 
-Current tools include a FAFB v783 archive downloader, checksum verification, a directed sparse graph builder, annotation matching, and a ViZDoom random-policy integration check.
+Current tools include data preparation, annotation matching, an experimental neural simulator, stimulation diagnostics, recorded activity playback, a random Doom baseline, and a bounded neural game controller.
 
 Project documentation, source comments, docstrings, and application messages are written in English. Upstream research data retains its original contents.
 
 ## Start here
 
-Our target is the following loop:
+The experimental bridge implements the following loop:
 
 ```mermaid
 flowchart LR
@@ -20,7 +20,7 @@ flowchart LR
     D --> A
 ```
 
-This diagram describes the intended system. We have tested sending actions to Doom, downloaded and prepared the real connectivity data, and matched neuron annotations. The brain simulation and learning components have not been implemented yet.
+The first working adapter converts screen brightness into drive for positive-sign visual projection cells and reads descending spikes to select actions. Image-to-cell and cell-to-action assignments are explicit engineering conventions, not known biological mappings. Learning has not been implemented.
 
 The local dataset contains **139,255 neurons**, **15,091,983 directed neuron pairs**, and **54,492,922 synaptic contacts**. The prepared sparse connectivity matrix occupies approximately **173 MiB** in memory; this excludes simulation and training memory. Every neuron matches an annotation row, although some annotation fields are missing. See the [validation record](docs/VALIDATION.md).
 
@@ -35,8 +35,16 @@ A **neuron** is a nerve cell that receives and transmits signals. A **synapse** 
 | `docs/VALIDATION.md` | What has been run and verified | Progress and evidence record |
 | `flydoom/data.py` | Downloads and checks data, builds the graph, and matches annotations | The current data preparation code |
 | `flydoom/doom_smoke.py` | Sends random actions to Doom to check the integration | Not a fly model or training procedure |
+| `flydoom/bridge.py` | Encodes images and decodes neural spikes | Fixed, artificial mappings; no learned weights |
+| `flydoom/brain_doom.py` | Runs the neural model and Doom together | Start here to watch the experimental neural controller |
+| `docs/BRIDGE.md` | Explains the adapter, controls, timing, and limitations | Guide to the first game connection |
+| `flydoom/simulation.py` | Loads the graph and computes changing voltages and spikes | Experimental model with explicit assumptions |
+| `flydoom/brain_probe.py` | Runs four stimulation and control experiments | Checks signal transmission before game integration |
+| `flydoom/viewer.py`, `flydoom/web/` | Local browser viewer for recorded trials | Play recorded activity, scrub time, and inspect neurons |
+| `docs/SIMULATION.md` | Explains equations, sign rules, and measured limitations | Guide to the first neural model |
 | `flydoom/__init__.py` | Marks the directory as a Python package | No manual changes needed |
 | `tests/test_data.py` | Checks the data code against small examples with known answers | Automated checks that catch mistakes |
+| `tests/test_simulation.py` | Checks dynamics, delays, reset, and controls | Numerical model tests |
 | `pyproject.toml` | Project metadata and required Python libraries | The project's dependency list |
 | `requirements.lock.txt` | Exact installed library versions | Recreates the package versions used here |
 | `data/raw/` | Original files downloaded from the researchers | No need to open them in a code editor |
@@ -106,6 +114,36 @@ uv pip sync --python .venv/Scripts/python.exe requirements.lock.txt
 
 The random-policy report is written to `runs/doom-smoke.json`. It is explicitly marked `trained: false` and `connectome_loaded: false`. The game runs without a visible window; this command does not start training.
 
+### Watch the game window
+
+To watch the random controller play the basic target-shooting scenario:
+
+```powershell
+.venv/Scripts/python.exe -m flydoom.doom_smoke --visible --episodes 5 --log-actions --output runs/my-visible-doom.json
+```
+
+This opens a separate ViZDoom window with a 640 x 480 view and HUD. It does not appear inside the brain viewer. The controller randomly chooses `WAIT`, `MOVE_LEFT`, `MOVE_RIGHT`, or `ATTACK`; the terminal prints each decision. The basic scenario allows sideways movement and shooting, not free navigation through a full Doom level. Episodes can end early when the target is hit, so the whole demo may be short. The window closes after the requested episodes finish.
+
+The visible mode advances one game tic at a time, paced around the normal 35-tic-per-second rate. Add `--speed 0.5` to watch at half speed. This changes wall-clock presentation, not the controller's decision frequency in game time. Rendering or OS scheduling can make playback slower than requested. Sound remains disabled. Press Ctrl+C in the terminal to stop; interrupted runs do not write a completed report. You do not need to steer with your keyboard: the random controller sends the actions.
+
+**This command still uses random control.** The separate neural controller below connects the graph to the game. The random report records the presentation settings separately and keeps `trained: false` and `connectome_loaded: false`. Implementation uses the existing ViZDoom interface; see its [game control documentation](https://vizdoom.farama.org/api/python/doom_game/).
+
+### Connect the neural model to Doom
+
+With the prepared graph and annotations already present, run:
+
+```powershell
+.venv/Scripts/python.exe -m flydoom.brain_doom --visible
+```
+
+After loading the graph, a separate Doom window opens. Every decision prints `L`, `R`, and `A`: mean spike rates per output neuron assigned to left, right, and attack. The largest rate selects the action; silence or a tied maximum selects `WAIT`. There is no random-action fallback. These groups were assigned by us, not identified as biological Doom controls.
+
+The default run stops after **24 decisions or an earlier game ending**, not necessarily a complete episode. It computes 50 ms of neural activity per decision and applies the chosen action for up to 4 game tics. The CPU needs approximately 1.3 seconds per decision on this machine, during which the game holds its current frame. This is expected computation time. The neural and game clocks are separate experimental time scales.
+
+Each run creates a new timestamped `runs/brain-doom-.../` folder with `report.json`, `mapping.json`, and a per-decision `decisions.jsonl` trace. Ctrl+C during play saves partial results. To preserve an explicitly named run, use `--output runs/my-neural-game`; an existing directory is rejected. The existing browser viewer still displays separate probe recordings, not live Doom activity.
+
+**This is an untrained engineering bridge that bypasses the retina.** It is not evidence of natural fly vision or competent play. Nothing new needs installing: NumPy encodes pixels, SciPy carries signals through the sparse graph, and ViZDoom reads frames and applies actions. See [the step-by-step bridge guide and control commands](docs/BRIDGE.md).
+
 ## Real connectivity data
 
 The two connectivity archive files require approximately 853 MB of downloads. Processing needs additional disk space and RAM; annotations are downloaded separately by `annotate` if missing.
@@ -120,6 +158,62 @@ Source: [FlyWire publication archive](https://zenodo.org/records/10676866). The 
 
 `annotate` downloads the [authors' v2.1.0 annotations](https://github.com/flyconnectome/flywire_annotations/tree/ebd66db2596fcc39c6950fb54ea3efa00f7fe8a0) if necessary, checks a pinned SHA-256 value, and orders rows by neuron identity. The outputs are `neuron_annotations.tsv` and `annotations_manifest.json`. A `.tsv` file is a text table with tab-separated columns. `top_nt` is the predicted neurotransmitter; missing values remain missing.
 
-The output matrix uses `A[target, source]`. Its weights are **unsigned synapse counts**, not physiological strengths or a working brain model. Neuron IDs remain exact integers. Neuron dynamics and the treatment of neurotransmitters in the model are the next stage.
+The prepared matrix uses `A[target, source]`. Its weights are **unsigned synapse counts**, not physiological strengths. Neuron IDs remain exact integers. The experimental simulator builds a separate signed weight matrix using the explicit assumptions in [the simulation guide](docs/SIMULATION.md).
+
+## First neural simulation
+
+```powershell
+.venv/Scripts/python.exe -m flydoom.brain_probe
+```
+
+This CPU experiment uses existing NumPy and SciPy dependencies. It stimulates selected cells for a short period and compares connected and disconnected conditions. Results go to `runs/brain-probe/report.json`. No Doom pixels, learned policy, or training are involved. The first run showed downstream voltage responses, but photoreceptor stimulation did not produce descending spikes, and some voltage excursions were excessive. See [the full results and next steps](docs/SIMULATION.md).
+
+## View the brain in your browser
+
+After a completed probe, run:
+
+```powershell
+.venv/Scripts/python.exe -m flydoom.viewer
+```
+
+Keep the terminal open and visit **http://127.0.0.1:8765**. The default viewer reads the existing `runs/brain-probe` experiment. To view a different completed experiment:
+
+```powershell
+.venv/Scripts/python.exe -m flydoom.viewer --run-dir runs/my-first-probe
+```
+
+An interrupted probe without `report.json` cannot be displayed. Complete it first. If port 8765 is in use, pass `--port 8766` and open the corresponding address. Press Ctrl+C in the terminal to stop the viewer.
+
+Choose a condition from **Experiment**. Drag the map to rotate, scroll to zoom, and click a point to inspect the cell. The **Show** filter can isolate spiking, directly stimulated, or descending cells. Cyan identifies stimulated spiking cells, orange other spiking cells, and pink spiking descending cells. Gray cells emitted no spikes; they may still have changed voltage.
+
+### Play activity over time
+
+New probes record per-neuron spike counts in successive intervals and voltage snapshots, including the initial resting state. To create your own replay, stop the old viewer with Ctrl+C and run these commands in order:
+
+```powershell
+.venv/Scripts/python.exe -m flydoom.brain_probe --output runs/my-replay
+.venv/Scripts/python.exe -m flydoom.viewer --run-dir runs/my-replay
+```
+
+Wait for the probe to finish all four conditions before starting the viewer. The terminal prints simulation progress. Open http://127.0.0.1:8765 and reload the page. A temporal recording starts playing once on load; use **Pause**, **Play recording**, **Replay**, or the **Simulation time** slider to explore it. Selecting a different experiment starts its recording. Clicking a neuron pauses playback for inspection.
+
+**Color by → Voltage change** shows endpoint voltage relative to rest: blue below rest, orange above rest, gray near rest. Color intensity saturates at ±20 mV for visibility, while actual values remain available in the inspector. This color mapping does not clip simulation voltages. **Spikes per interval** uses the cyan/orange/pink spike colors described above and shows counts since the previous saved sample. The cells remain in place; their activity changes. Default recordings sample every 10 ms, with each saved sample displayed for 400 ms of viewing time (about 40 times slower than simulated time). There is no interpolation. The final frame stays visible until replayed.
+
+The sidebar totals and bars summarize the whole trial; the map and trace cursor follow the selected time. The stimulus indicator reports whether input was applied during the selected interval. These are recorded results, not a live simulation. Older runs with only total counts remain viewable but show disabled playback controls and instructions to create a new recording.
+
+The map uses all 139,255 real neuron anchor positions, converted from the authors' 4 x 4 x 40 nm voxel coordinates to micrometers before display normalization. These are reference points on neurons, not their full shapes, somas, synaptic locations, or connections. Source scan orientation is retained; anatomical left/right is not inferred from screen position. See the [authors' coordinate definitions](https://github.com/flyconnectome/flywire_annotations/blob/ebd66db2596fcc39c6950fb54ea3efa00f7fe8a0/supplemental_files/Supplemental_files_columns.md).
+
+**Playback uses measured per-neuron recordings; it is not live simulation.** Legacy files without temporal data show whole-trial totals only. Group bars summarize annotated cell superclasses, not anatomical brain regions or inferred mental functions. The viewer uses Python's built-in HTTP server and the browser's WebGL support, with no new packages, CDN, or external web service. It listens only on the local machine and verifies data/result hashes before serving results.
+
+### Windows test directory permissions
+
+If pytest reports access denied for its temporary or cache directory, use a fresh temporary location and disable the cache:
+
+```powershell
+$testTemp = Join-Path $env:TEMP ("fly-doom-tests-" + [guid]::NewGuid().ToString("N"))
+.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider --basetemp "$testTemp"
+```
+
+This still runs every test. Use the fresh generated path: pytest manages the directory passed to `--basetemp` as disposable test storage.
 
 Large data files, the environment, and run outputs are excluded from version control. Third-party data and game assets retain their own licenses; this repository does not relicense or bundle them.

@@ -47,7 +47,7 @@ flowchart LR
     H[Training reward] -. parameter update .-> F
 ```
 
-This diagram is a design; the neural model and training have not yet been implemented.
+This diagram is a training design. The experimental LIF kernel now also runs inside a bounded pixel-to-game bridge with a fixed, artificial readout. The trainable readout and reward update shown here have not been implemented. See [the bridge assumptions and controls](BRIDGE.md).
 
 1. Start with a fixed graph and a small trainable readout. Inputs come only from images, and the output policy has no direct access to those images. This is a learned controller on top of a fixed connectivity model.
 2. Then train the magnitudes of existing edges. The graph mask remains fixed, with no new connections. Record signs, weight bounds, and deviations from biological initialization. Choose between PPO/BPTT and local plasticity after initial performance measurements.
@@ -76,6 +76,10 @@ Local GPU: NVIDIA RTX 3060 Laptop with 6,144 MiB VRAM. System RAM information co
 - M4: training existing synapses and comparing under the same evaluation protocol.
 - M5: recordings, video, and more difficult Doom tasks.
 
-September 26 follow-up: M1 is complete. The real graph was prepared and the publication-matched `flywire_annotations` v2.1.0 rows were aligned with all 139,255 neuron IDs. Measurements and limitations are in the [validation record](VALIDATION.md). M2 is next; there are no working neuron dynamics yet.
+September 26 follow-up: M1 is complete. The real graph was prepared and the publication-matched `flywire_annotations` v2.1.0 rows were aligned with all 139,255 neuron IDs. Measurements and limitations are in the [validation record](VALIDATION.md).
+
+September 27 follow-up: an experimental LIF kernel and four bounded whole-graph stimulation conditions now run. M2 remains incomplete: photoreceptor stimulation affects downstream voltage but does not elicit descending spikes, and large voltage excursions require calibration. The positive control bypasses the retina. See [model assumptions, timing, and negative results](SIMULATION.md).
 
 Long training runs will not begin before passing M2. If a subcircuit is needed instead of the whole brain, its scope will be recorded explicitly and will not be described as whole-brain simulation. Training time estimates will follow the first benchmark.
+
+September 27 integration follow-up: a bounded engineering bridge now feeds coarse screen brightness directly into positive visual projection cells and maps descending spike rates to game buttons. This deliberately bypasses the unresolved retinal pathway, uses artificial assignments, and does not constitute passage of M2 or evidence of learning. Disconnected and zero-input controls are included; physiological calibration remains outstanding.

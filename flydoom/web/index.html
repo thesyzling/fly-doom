@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fly Doom · Neural Observatory</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header><div class="brand"><span class="logo">◉</span><div>FLY DOOM<small>NEURAL OBSERVATORY</small></div></div><span class="badge">RECORDED EXPERIMENT</span><span id="runLabel">Loading verified data…</span></header>
+  <main>
+    <section class="scene-panel">
+      <div class="scene-heading"><div><p class="eyebrow">FAFB V783 / SPATIAL ACTIVITY</p><h1>Inside the network.</h1><p id="mapDescription">Explore recorded neural activity over time.</p></div></div>
+      <div class="toolbar"><label>Experiment<select id="condition" disabled></select></label><label>Show<select id="filter"><option value="0">All neurons</option><option value="1">Spiking neurons</option><option value="2">Directly stimulated</option><option value="3">Descending neurons</option></select></label><button id="reset">Reset view</button></div>
+      <div class="playback"><button id="play" disabled>Play recording</button><label>Color by<select id="colorMode" disabled><option value="voltage">Voltage change</option><option value="spikes">Spikes per interval</option></select></label><div class="timeline"><label for="time">Simulation time <output id="timeLabel">—</output></label><input id="time" type="range" min="0" max="0" value="0" step="1" disabled></div><span id="pulseStatus">—</span></div>
+      <p id="playbackHelp" class="muted" role="status"></p>
+      <div class="canvas-wrap"><canvas id="brain" aria-label="Interactive 3D neuron anchor map. Drag to rotate, scroll to zoom, click to inspect."></canvas><div id="loading" role="status">Preparing neuron map…</div><div class="map-caption">Drag to rotate · Scroll to zoom · Click a point to inspect<br>Source anchor positions, not neuron shapes or synapse locations.</div></div>
+      <div class="legend" id="spikeLegend"><span><i class="quiet"></i>No spikes</span><span><i class="stimulus"></i>Stimulated + spiking</span><span><i class="active"></i>Other spiking cells</span><span><i class="output"></i>Descending + spiking</span></div>
+      <div class="legend" id="voltageLegend" hidden><span><i class="quiet"></i>Near rest</span><span><i class="inhibited"></i>Below rest</span><span><i class="active"></i>Above rest</span><span>Color intensity saturates at ±20 mV; actual values are preserved.</span></div>
+      <div class="notice" id="mapNotice">Recorded results, not a live simulation.</div>
+    </section>
+    <aside>
+      <p class="eyebrow">EXPERIMENT READOUT</p><h2 id="conditionTitle">Loading…</h2><p id="description"></p>
+      <div class="metrics"><div><strong id="spikes">—</strong><span>Total spikes</span></div><div><strong id="descending">—</strong><span>Descending spikes</span></div><div><strong id="stimulated">—</strong><span>Stimulated cells</span></div><div><strong id="duration">—</strong><span>Simulated duration</span></div></div>
+      <p class="muted">The counters and bars summarize the entire trial.</p><h3>Spikes by cell superclass</h3><div id="groups"></div>
+      <h3>Recorded cumulative spikes</h3><svg id="trace" viewBox="0 0 340 120" role="img" aria-label="Recorded cumulative spike counts over time"></svg><p class="muted">The cursor follows the selected recording time.</p>
+      <h3>Selected neuron</h3><div id="inspector" aria-live="polite">Click a point in the map to inspect its identity and recorded activity.</div>
+    </aside>
+  </main>
+  <footer><span id="dataset">139,255 neurons · Real anchor coordinates</span><span>Experimental LIF model · No Doom input · No trained policy</span></footer>
+  <section class="limits"><h3>What this result can tell us</h3><p id="interpretation"></p><p>Activity identifies where this model responded. It does not establish what a real fly is thinking, seeing, or deciding. Cell superclasses are annotations, not a segmentation of brain regions. The model still has excessive voltage excursions and an incomplete visual pathway.</p></section>
+</body>
+</html>
