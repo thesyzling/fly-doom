@@ -1,82 +1,100 @@
-# Fly Doom
+﻿# Fly Doom
 
-Meyve sineğinin gerçek bağlantı haritasına dayalı bir modeli Doom kontrolüne eğitmek için araştırma projesi.
+A research project to train a model based on the real fruit fly connectome to control Doom.
 
-**Aşama: gerçek bağlantı haritası ve nöron açıklamaları hazır.** Henüz beyin simülatörü veya eğitilmiş politika yok. [Kaynaklar, mimari ve deney planı](docs/RESEARCH.tr.md).
+**Status: the real connectivity graph and neuron annotations are ready.** There is no brain simulator or trained policy yet. See the [research, architecture, and experiment plan](docs/RESEARCH.md).
 
-Mevcut araçlar: FAFB v783 arşiv indiricisi, checksum doğrulaması, yönlü seyrek graf hazırlayıcısı ve ViZDoom rastgele politika bağlantı testi.
+Current tools include a FAFB v783 archive downloader, checksum verification, a directed sparse graph builder, annotation matching, and a ViZDoom random-policy integration check.
 
-## İlk kez bakıyorsan buradan başla
+Project documentation, source comments, docstrings, and application messages are written in English. Upstream research data retains its original contents.
 
-Hedefimiz şu döngüyü kurmak:
+## Start here
+
+Our target is the following loop:
 
 ```mermaid
 flowchart LR
-    A[Doom ekranı] --> B[Görüntüyü nöron girdisine çevir]
-    B --> C[Sinek bağlantıları üzerinde aktivite hesapla]
-    C --> D[Aktiviteden oyun tuşu seç]
+    A[Doom screen] --> B[Convert pixels into neural input]
+    B --> C[Compute activity across fly connections]
+    C --> D[Select a game action from neural activity]
     D --> A
 ```
 
-Bu, hedeflediğimiz sistemin şeması. Şu anda Doom'a tuş göndermeyi denedik; gerçek bağlantı verisini indirip hazırladık ve nöron açıklamalarını eşledik. Ortadaki beyin simülasyonu ve öğrenen bölüm henüz yok.
+This diagram describes the intended system. We have tested sending actions to Doom, downloaded and prepared the real connectivity data, and matched neuron annotations. The brain simulation and learning components have not been implemented yet.
 
-Yerel veride **139.255 nöron**, **15.091.983 yönlü nöron çifti** ve **54.492.922 sinaps** var. Hazırlanan seyrek bağlantı matrisi bellekte yaklaşık **173 MiB** tutuyor; bu sayı simülasyon veya eğitim belleğini kapsamıyor. Bütün nöronlar açıklama tablosuyla eşleşti, fakat bazı açıklama alanları boş. [Doğrulama ayrıntıları](docs/VALIDATION.tr.md).
+The local dataset contains **139,255 neurons**, **15,091,983 directed neuron pairs**, and **54,492,922 synaptic contacts**. The prepared sparse connectivity matrix occupies approximately **173 MiB** in memory; this excludes simulation and training memory. Every neuron matches an annotation row, although some annotation fields are missing. See the [validation record](docs/VALIDATION.md).
 
-**Nöron**, sinyal alan ve başka hücrelere ileten sinir hücresidir. **Sinaps**, bu hücreler arasındaki iletişim noktasıdır. **Connectome / bağlantı haritası**, hangi nöronların birbirine bağlandığını gösterir. **Simülasyon**, bu bağlantılar üzerinde aktivitenin zamanla nasıl değiştiğini hesaplar. **Eğitim**, oyun deneyiminden yararlanıp seçilen model parametrelerini değiştirir. Bunlar ayrı adımlardır.
+A **neuron** is a nerve cell that receives and transmits signals. A **synapse** is a communication site between cells. A **connectome** describes which neurons are connected. A **simulation** computes how activity changes over time along those connections. **Training** changes selected model parameters using experience from the game. These are separate steps.
 
-### Hangi dosya ne işe yarıyor?
+### What each file does
 
-| Dosya veya klasör | Görevi | Şimdi bilmen gereken |
+| File or directory | Purpose | What to know now |
 |---|---|---|
-| `README.md` | Projenin giriş rehberi; şu anda okuduğun dosya | Başlangıç noktan |
-| `docs/RESEARCH.tr.md` | Kaynaklar, neden bu yöntemi seçtiğimiz ve deney planı | Ayrıntı istediğinde oku |
-| `docs/VALIDATION.tr.md` | Neyi çalıştırıp doğruladığımız | İlerleme kaydı |
-| `flydoom/data.py` | Veriyi indirir, kontrol eder, bağlantı matrisini hazırlar ve hücre açıklamalarını eşler | Şu an üzerinde çalıştığımız kod |
-| `flydoom/doom_smoke.py` | Doom'a rastgele tuşlar göndererek bağlantıyı dener | Sinek modeli veya eğitim değil |
-| `flydoom/__init__.py` | Python'a bu klasörün bir paket olduğunu bildirir | Düzenlemen gerekmiyor |
-| `tests/test_data.py` | Veri kodunu küçük, sonucu bilinen örneklerle kontrol eder | Hataları yakalayan otomatik denetimler |
-| `pyproject.toml` | Projenin adı ve ihtiyaç duyduğu Python kütüphaneleri | Projenin araç listesi |
-| `requirements.lock.txt` | Kurulu kütüphanelerin kesin sürümleri | Aynı ortamı yeniden kurmayı sağlar |
-| `data/raw/` | Araştırmacılardan indirilen kaynak dosyaları | Kod editöründe açman gerekmiyor |
-| `data/processed/` | Kaynak verinin programımız için hazırlanmış hali | Hesaplamada kullanılacak |
-| `runs/` | Oyun denemelerinin sonuçları | Sonuçlara buradan bakılır |
-| `.venv/` | Projeye özel Python ve kütüphaneler | Otomatik; elle değiştirme |
-| `.uv-cache/`, `.pytest_cache/`, `__pycache__/` | Kurulum ve çalıştırma sırasında oluşan önbellekler | Şimdilik ilgilenmene gerek yok |
-| `.gitignore` | Hangi dosyaların Git geçmişine eklenmeyeceğini belirtir | Büyük veri ve geçici dosyaları hariç tutar |
-| `_vizdoom.ini` | Oyun motorunun oluşturduğu yerel ayarlar | Otomatik oluşur |
+| `README.md` | The project guide you are reading | Start here |
+| `docs/RESEARCH.md` | Sources, design decisions, and experiment plan | Read for scientific and technical context |
+| `docs/VALIDATION.md` | What has been run and verified | Progress and evidence record |
+| `flydoom/data.py` | Downloads and checks data, builds the graph, and matches annotations | The current data preparation code |
+| `flydoom/doom_smoke.py` | Sends random actions to Doom to check the integration | Not a fly model or training procedure |
+| `flydoom/__init__.py` | Marks the directory as a Python package | No manual changes needed |
+| `tests/test_data.py` | Checks the data code against small examples with known answers | Automated checks that catch mistakes |
+| `pyproject.toml` | Project metadata and required Python libraries | The project's dependency list |
+| `requirements.lock.txt` | Exact installed library versions | Recreates the package versions used here |
+| `data/raw/` | Original files downloaded from the researchers | No need to open them in a code editor |
+| `data/processed/` | Data prepared for our program | Inputs for later computations |
+| `runs/` | Results from game runs | Experiment output |
+| `.venv/` | The project's Python environment and libraries | Automatically managed |
+| `.uv-cache/`, `.pytest_cache/`, `__pycache__/` | Installation and runtime caches | No need to inspect them now |
+| `.gitignore` | Defines files excluded from Git tracking | Excludes large data and temporary files |
+| `_vizdoom.ini` | Local settings generated by the game engine | Automatically generated |
 
-Yeni oluşturulmuş bir klasörde `data/` ve `runs/`, ilgili komutlar çalışınca ortaya çıkar. Dosya uzantıları da ipucu verir: `.py` çalıştırılabilir Python kodu, `.md` açıklama metni, `.json` alan-değer biçiminde kayıt dosyasıdır. `.npy`, `.npz` ve `.feather` ise sayısal veriyi programların verimli okuması içindir.
+In a fresh checkout, `data/` and `runs/` appear when their corresponding commands run. File extensions also help: `.py` is Python code, `.md` is documentation, and `.json` stores structured records. `.npy`, `.npz`, and `.feather` store numerical data for efficient program access.
 
-### Bağlantı verisini nasıl düşünmelisin?
+### Tools we installed and why
 
-Öğretici, uydurma bir örnek:
+We used the existing Python 3.13.11 installation on this machine. The existing `uv` tool created `.venv` and installed the project dependencies there.
 
-| Kaynak nöron | Hedef nöron | Sinaps sayısı |
+| Tool or library | Role in this project | Why we use it |
+|---|---|---|
+| Python | Runs our scripts | Provides a shared environment for data processing and the game interface |
+| `uv` | Creates the environment and installs packages | Keeps dependency installation and management straightforward |
+| NumPy | Stores and processes arrays of neuron IDs and counts | Supports efficient array operations and exact 64-bit integer IDs |
+| SciPy | Builds and stores the sparse connectivity matrix | Stores existing connections without allocating every possible neuron pair |
+| PyArrow | Reads the research archive's Feather table | Reads the source format and selects the columns we need |
+| ViZDoom | Provides the Doom engine interface | Lets Python read screen frames and send game actions |
+| pytest | Runs automated checks | Detects data preparation errors using known examples |
+
+The lock file also contains dependencies installed by these libraries, such as Gymnasium and pygame-ce. Our current scripts do not directly import those packages. Standard-library modules such as `pathlib`, `hashlib`, `json`, `csv`, and `urllib.request` come with Python and did not require separate installation. PyTorch and a learning algorithm have not been installed or implemented as part of this project yet.
+
+### Understanding connectivity data
+
+A fictional example for learning:
+
+| Source neuron | Target neuron | Synapse count |
 |---|---|---:|
 | A | B | 3 |
 | B | C | 2 |
 
-İlk satır A'dan B'ye üç sinaptik temas olduğunu söyler. B'den A'ya da bağlantı olduğunu söylemez. Ayrıca üç temas, ölçülmüş elektriksel etkinin kesin olarak üç kat olduğu anlamına gelmez.
+The first row means there are three synaptic contacts from A to B. It does not imply a connection from B to A. Three contacts also do not establish an electrical effect exactly three times as strong.
 
-`data.py` bu listeyi hesaplamaya uygun bir matrise dönüştürür. `A[hedef, kaynak]` kullanıyoruz: B satırı ve A sütunundaki değer 3 olur. Çoğu nöron çifti doğrudan bağlı olmadığından sıfırları tek tek saklamayız; buna **seyrek matris** denir. Böylece bütün nöronları koruyup bellek kullanımını azaltırız.
+`data.py` converts this list into a matrix suitable for computation. We use `A[target, source]`: the entry in row B and column A is 3. Most neuron pairs are not directly connected, so we avoid storing all the zero entries. This is a **sparse matrix**. It retains every neuron while reducing memory use.
 
-İndirme sonrası dosyanın dijital özeti (**checksum**) yayıncının değeriyle karşılaştırılır. Bu, indirdiğimiz dosyanın arşivle aynı olduğunu denetler; biyolojik modelin doğru olduğunu kanıtlamaz. Hazırlama sonunda `manifest.json`, kullanılan kaynakları ve nöron/bağlantı/sinaps sayılarını kaydeder.
+After downloading an archive file, its digital fingerprint, or **checksum**, is compared with the publisher's value. This checks that the file matches the archive; it does not establish biological validity. Preparation writes `manifest.json` to record the sources and neuron, connection, and synapse counts.
 
-### Komutu nasıl okuyacaksın?
+### Reading a command
 
 ```powershell
 .venv/Scripts/python.exe -m flydoom.data prepare
 ```
 
-- `.venv/Scripts/python.exe`: bu projenin Python'unu çalıştır.
-- `-m flydoom.data`: `flydoom` klasöründeki `data.py` modülünü çalıştır.
-- `prepare`: modülün veri hazırlama işini seç. `download` yazarsak indirme işini seçeriz.
+- `.venv/Scripts/python.exe`: run the Python interpreter in this project's environment.
+- `-m flydoom.data`: run the `data.py` module in the `flydoom` package.
+- `prepare`: select the data preparation operation. Use `download` to select downloading or `annotate` to match neuron annotations.
 
-Komutlar, proje klasöründe açık bir PowerShell terminalinde çalıştırılır. Ben burada çalıştırdığımda senin aynı komutu tekrar çalıştırman gerekmiyor.
+Run commands in a PowerShell terminal opened in the project directory. There is no need to repeat a command that has already completed successfully unless you intend to rerun that step.
 
-## Kurulum (PowerShell)
+## Setup (PowerShell)
 
-Python 3.11+ ve `uv` gerekir. Bu makinede Python 3.13 ile denenmiştir.
+Requires Python 3.11+ and `uv`. Tested on this machine with Python 3.13.
 
 ```powershell
 $env:UV_CACHE_DIR = Join-Path (Get-Location) '.uv-cache'
@@ -86,11 +104,11 @@ uv pip sync --python .venv/Scripts/python.exe requirements.lock.txt
 .venv/Scripts/python.exe -m flydoom.doom_smoke --episodes 3
 ```
 
-Rastgele oyun koşusunun raporu `runs/doom-smoke.json` dosyasına yazılır. `trained: false` ve `connectome_loaded: false` olarak işaretlenir. Oyun görünmez pencerede çalışır; bu komut eğitim başlatmaz.
+The random-policy report is written to `runs/doom-smoke.json`. It is explicitly marked `trained: false` and `connectome_loaded: false`. The game runs without a visible window; this command does not start training.
 
-## Gerçek bağlantı verisi
+## Real connectivity data
 
-Yaklaşık 853 MB indirme; işleme sırasında ek disk ve RAM gerekir.
+The two connectivity archive files require approximately 853 MB of downloads. Processing needs additional disk space and RAM; annotations are downloaded separately by `annotate` if missing.
 
 ```powershell
 .venv/Scripts/python.exe -m flydoom.data download
@@ -98,10 +116,10 @@ Yaklaşık 853 MB indirme; işleme sırasında ek disk ve RAM gerekir.
 .venv/Scripts/python.exe -m flydoom.data annotate
 ```
 
-Kaynak: [FlyWire yayın arşivi](https://zenodo.org/records/10676866). İndirici yayınlanan MD5 değerlerini kontrol eder. Hazırlayıcı kaynak ve çıktı SHA-256 değerlerini, nöron/kenar/sinaps sayılarını `data/processed/fafb783/manifest.json` içine yazar.
+Source: [FlyWire publication archive](https://zenodo.org/records/10676866). The downloader checks published MD5 values. Preparation records source and output SHA-256 values and neuron, edge, and synapse counts in `data/processed/fafb783/manifest.json`.
 
-`annotate`, [yazarların v2.1.0 açıklamalarını](https://github.com/flyconnectome/flywire_annotations/tree/ebd66db2596fcc39c6950fb54ea3efa00f7fe8a0) gerekirse indirir, sabit SHA-256 değeriyle kontrol eder ve nöron kimliklerine göre sıralar. Çıktı `neuron_annotations.tsv`, eşleme raporu `annotations_manifest.json` olur. `.tsv`, sütunları sekmeyle ayrılmış metin tablosudur. `top_nt` tahmin edilen nörotransmiterdir; boş alanlar tamamlanmış gibi gösterilmez.
+`annotate` downloads the [authors' v2.1.0 annotations](https://github.com/flyconnectome/flywire_annotations/tree/ebd66db2596fcc39c6950fb54ea3efa00f7fe8a0) if necessary, checks a pinned SHA-256 value, and orders rows by neuron identity. The outputs are `neuron_annotations.tsv` and `annotations_manifest.json`. A `.tsv` file is a text table with tab-separated columns. `top_nt` is the predicted neurotransmitter; missing values remain missing.
 
-Çıktı matrisi `A[hedef, kaynak]` biçimindedir. Ağırlıklar **işaretsiz sinaps sayılarıdır**; fizyolojik ağırlık veya çalışır beyin modeli değildir. Nöron kimlikleri tam sayı olarak korunur. Nöron dinamiği ve nörotransmiterin modele nasıl yansıtılacağı sonraki aşamadır.
+The output matrix uses `A[target, source]`. Its weights are **unsigned synapse counts**, not physiological strengths or a working brain model. Neuron IDs remain exact integers. Neuron dynamics and the treatment of neurotransmitters in the model are the next stage.
 
-Büyük veri, sanal ortam ve koşu dosyaları sürüm kontrolünden hariçtir. Üçüncü taraf veriler ve oyun varlıkları kendi lisanslarına tabidir; bu depo onları yeniden lisanslamaz veya paketlemez.
+Large data files, the environment, and run outputs are excluded from version control. Third-party data and game assets retain their own licenses; this repository does not relicense or bundle them.
