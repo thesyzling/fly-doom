@@ -120,6 +120,8 @@ class NeuralController:
             voltage_min = min(voltage_min, float(net.voltage.min()))
             voltage_max = max(voltage_max, float(net.voltage.max()))
         compute_seconds = perf_counter() - started
+        # Available to learning adapters without changing the public JSON trace.
+        self.last_counts = counts
         duration_ms = self.steps * net.params.dt_ms
         action, rates = decode_spikes(counts, mapping.output_groups, duration_ms)
         return {

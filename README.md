@@ -2,13 +2,21 @@
 
 A research project to train a model based on the real fruit fly connectome to control Doom.
 
-**Status: an experimental pixel-to-connectome-to-Doom loop now runs.** It uses the real graph and LIF dynamics, with artificial image and action assignments that bypass the retina. Natural visual transmission and physiological calibration still need work. There is no trained policy. See the [bridge guide](docs/BRIDGE.md), [research plan](docs/RESEARCH.md), and [simulation assumptions and results](docs/SIMULATION.md).
+**Status: the experimental neural game loop and a staged local learning pipeline are implemented.** Laya and CUDA PyTorch are installed, the local model is downloaded, and engineering gain checks have passed. Human demonstrations are still needed before training a Doom policy. Natural visual transmission and physiological calibration remain unresolved. Start with the [learning guide](docs/LEARNING.md); see also the [bridge guide](docs/BRIDGE.md), [research plan](docs/RESEARCH.md), and [simulation assumptions](docs/SIMULATION.md).
 
-Current tools include data preparation, annotation matching, an experimental neural simulator, stimulation diagnostics, recorded activity playback, a random Doom baseline, and a bounded neural game controller.
+Current tools include data preparation, annotation matching, an experimental neural simulator, stimulation diagnostics, recorded activity playback, a random Doom baseline, a bounded neural game controller, human demonstration recording, local Laya adaptation, and training of an additional spiking neuron group.
 
 Project documentation, source comments, docstrings, and application messages are written in English. Upstream research data retains its original contents.
 
 ## Start here
+
+On the prepared machine, run this from the project directory to record your play and begin the learning pipeline:
+
+```powershell
+.\.venv\Scripts\python.exe -m flydoom.learning run
+```
+
+Press **ENTER** before each of 10 episodes. Use **LEFT/RIGHT** or **A/D** to move and **SPACE** to fire. Try to align with the target and shoot. **ESC** stops recording and keeps completed episodes. When recording finishes, the command extracts neural features and trains the Laya decision head. It trains the additional 64 spiking cells only if Laya passes the validation gate, then prints the command for watching the student play. Training is an experiment; a failed gate is a possible result. See [LEARNING.md](docs/LEARNING.md) for timing, separate commands, and what each stage means.
 
 The experimental bridge implements the following loop:
 
@@ -20,7 +28,7 @@ flowchart LR
     D --> A
 ```
 
-The first working adapter converts screen brightness into drive for positive-sign visual projection cells and reads descending spikes to select actions. Image-to-cell and cell-to-action assignments are explicit engineering conventions, not known biological mappings. Learning has not been implemented.
+The first working adapter converts screen brightness into drive for positive-sign visual projection cells and reads descending spikes to select actions. Image-to-cell and cell-to-action assignments are explicit engineering conventions, not known biological mappings. The learning pipeline instead trains an additional group from descending voltages and spike rates, with the fly graph frozen and Laya used as a teacher during training.
 
 The local dataset contains **139,255 neurons**, **15,091,983 directed neuron pairs**, and **54,492,922 synaptic contacts**. The prepared sparse connectivity matrix occupies approximately **173 MiB** in memory; this excludes simulation and training memory. Every neuron matches an annotation row, although some annotation fields are missing. See the [validation record](docs/VALIDATION.md).
 
@@ -38,6 +46,12 @@ A **neuron** is a nerve cell that receives and transmits signals. A **synapse** 
 | `flydoom/bridge.py` | Encodes images and decodes neural spikes | Fixed, artificial mappings; no learned weights |
 | `flydoom/brain_doom.py` | Runs the neural model and Doom together | Start here to watch the experimental neural controller |
 | `docs/BRIDGE.md` | Explains the adapter, controls, timing, and limitations | Guide to the first game connection |
+| `flydoom/learning.py` | Starts recording, preparation, teacher training, and student training | Run `python -m flydoom.learning run` |
+| `flydoom/learning_data.py` | Records your buttons and replays images through the graph | Keeps episodes in separate learning splits |
+| `flydoom/laya_teacher.py` | Downloads Laya and adapts its decision head | Frozen text encoder; supervised imitation |
+| `flydoom/student.py` | Trains and runs the extra 64 spiking cells | Uses Laya during training, without loading it during play |
+| `flydoom/calibration.py` | Selects a smaller global synaptic gain | Engineering stability checks, not biological validation |
+| `docs/LEARNING.md` | Explains the learning experiment and commands | Read before the first recording |
 | `flydoom/simulation.py` | Loads the graph and computes changing voltages and spikes | Experimental model with explicit assumptions |
 | `flydoom/brain_probe.py` | Runs four stimulation and control experiments | Checks signal transmission before game integration |
 | `flydoom/viewer.py`, `flydoom/web/` | Local browser viewer for recorded trials | Play recorded activity, scrub time, and inspect neurons |
@@ -47,6 +61,8 @@ A **neuron** is a nerve cell that receives and transmits signals. A **synapse** 
 | `tests/test_simulation.py` | Checks dynamics, delays, reset, and controls | Numerical model tests |
 | `pyproject.toml` | Project metadata and required Python libraries | The project's dependency list |
 | `requirements.lock.txt` | Exact installed library versions | Recreates the package versions used here |
+| `requirements-training.lock.txt` | Exact training environment versions | Windows, Python 3.13, CUDA 13.0 PyTorch build |
+| `models/laya-base/` | Downloaded local Laya checkpoint and checksums | Large model files, excluded from Git |
 | `data/raw/` | Original files downloaded from the researchers | No need to open them in a code editor |
 | `data/processed/` | Data prepared for our program | Inputs for later computations |
 | `runs/` | Results from game runs | Experiment output |
@@ -69,9 +85,14 @@ We used the existing Python 3.13.11 installation on this machine. The existing `
 | SciPy | Builds and stores the sparse connectivity matrix | Stores existing connections without allocating every possible neuron pair |
 | PyArrow | Reads the research archive's Feather table | Reads the source format and selects the columns we need |
 | ViZDoom | Provides the Doom engine interface | Lets Python read screen frames and send game actions |
+| pygame-ce | Displays the demonstration window and reads keyboard input | Lets you provide examples by playing |
+| Laya | Scores the four possible actions from text descriptions of coarse images | Provides the local teacher we can specialize |
+| PyTorch | Computes gradients and updates selected weights | Trains the Laya head on the GPU and the small spiking group on the CPU |
+| Transformers and Hugging Face Hub | Load the text encoder, tokenizer, and downloaded checkpoint | Supply Laya's pretrained components |
+| Safetensors | Stores numerical model weights | Saves and reloads the teacher head and student |
 | pytest | Runs automated checks | Detects data preparation errors using known examples |
 
-The lock file also contains dependencies installed by these libraries, such as Gymnasium and pygame-ce. Our current scripts do not directly import those packages. Standard-library modules such as `pathlib`, `hashlib`, `json`, `csv`, and `urllib.request` come with Python and did not require separate installation. PyTorch and a learning algorithm have not been installed or implemented as part of this project yet.
+The lock files also contain transitive dependencies such as Gymnasium. Standard-library modules such as `pathlib`, `hashlib`, `json`, `csv`, and `urllib.request` come with Python and did not require separate installation. Training dependencies are optional for the original simulator and viewer; the learning setup is documented separately below.
 
 ### Understanding connectivity data
 
@@ -101,6 +122,8 @@ After downloading an archive file, its digital fingerprint, or **checksum**, is 
 Run commands in a PowerShell terminal opened in the project directory. There is no need to repeat a command that has already completed successfully unless you intend to rerun that step.
 
 ## Setup (PowerShell)
+
+The following is the **base environment** setup for a fresh checkout. Syncing its lock file removes optional training packages. For the learning environment, use the [training setup instructions](docs/LEARNING.md#setup-on-a-fresh-machine).
 
 Requires Python 3.11+ and `uv`. Tested on this machine with Python 3.13.
 

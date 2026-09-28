@@ -4,6 +4,8 @@ __pycache__/
 .pytest_cache/
 data/
 runs/
+models/
+.hf-cache/
 *.egg-info/
 .env
 _vizdoom.ini
