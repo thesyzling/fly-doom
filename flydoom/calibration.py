@@ -4,6 +4,7 @@ import argparse
 from dataclasses import asdict
 import json
 from pathlib import Path
+from time import sleep
 
 import numpy as np
 
@@ -16,7 +17,16 @@ def write_json(path, value):
     path = Path(path)
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n", encoding="utf-8")
-    temporary.replace(path)
+    # Windows sync/indexing processes can briefly hold the destination open.
+    # Keep atomic replacement; never truncate the last complete report.
+    for attempt in range(6):
+        try:
+            temporary.replace(path)
+            break
+        except PermissionError:
+            if attempt == 5:
+                raise
+            sleep(0.05 * 2**attempt)
 
 
 def output_features(controller):

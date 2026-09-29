@@ -58,14 +58,20 @@ class SpikingReadout(nn.Module):
         return self.readout(total / 8)
 
 
-def train(dataset, base, teacher, output, *, epochs=50, seed=7, hidden=64):
+def train(dataset, base, teacher, output, *, epochs=50, seed=7, hidden=64,
+          experimental_teacher=False, evaluate_test=True):
     if not 1 <= epochs <= 1000 or not 4 <= hidden <= 512:
         raise ValueError("Require 1..1000 epochs and 4..512 additional cells")
     source, parts = read_prepared(dataset)
     teacher = Path(teacher)
     teacher_report = json.loads((teacher / "report.json").read_text(encoding="utf-8"))
-    if not teacher_report.get("teacher_accepted") or teacher_report.get("status") != "completed":
+    if teacher_report.get("status") != "completed":
+        raise ValueError("Teacher checkpoint is not complete")
+    if not teacher_report.get("teacher_accepted") and not experimental_teacher:
         raise ValueError("Laya did not pass the teacher gate. Collect better demonstrations before distillation.")
+    if Path(output).exists():
+        raise FileExistsError(output)
+    torch.set_num_threads(4)
     dataset_hash = digest(Path(dataset) / "manifest.json", "sha256")
     if teacher_report["dataset_sha256"] != dataset_hash or digest(teacher / "head.safetensors", "sha256") != teacher_report["head_sha256"]:
         raise ValueError("Teacher/data provenance mismatch")
@@ -93,6 +99,10 @@ def train(dataset, base, teacher, output, *, epochs=50, seed=7, hidden=64):
         initial = metrics(model(x["validation"]).softmax(-1).numpy(), parts["validation"]["actions"])
     report = {"schema": "spiking_student_v1", "status": "running", "student_trained": False,
               "connectome_weights_trained": False, "laya_needed_at_inference": False,
+              "experimental_teacher": experimental_teacher,
+              "teacher_accepted": bool(teacher_report.get("teacher_accepted")),
+              "teacher_rejection_reasons": teacher_report.get("rejection_reasons", []),
+              "test_evaluated": evaluate_test,
               "training_method": "Laya probability distillation plus 0.25 weighted human cross-entropy",
               "input_size": x["train"].shape[1], "hidden": hidden, "seed": seed,
               "dataset_sha256": dataset_hash, "teacher_report_sha256": digest(teacher / "report.json", "sha256"),
@@ -130,10 +140,11 @@ def train(dataset, base, teacher, output, *, epochs=50, seed=7, hidden=64):
         model.load_state_dict(load_file(str(output / "student.safetensors")))
         with torch.no_grad():
             report["validation"] = metrics(model(x["validation"]).softmax(-1).numpy(), parts["validation"]["actions"])
-            report["test"] = metrics(model(x["test"]).softmax(-1).numpy(), parts["test"]["actions"])
-            silenced = x["test"].clone()
-            silenced[:, :-4] = 0
-            report["test_zero_neural_features"] = metrics(model(silenced).softmax(-1).numpy(), parts["test"]["actions"])
+            for split in ("validation", "test") if evaluate_test else ("validation",):
+                report[split] = metrics(model(x[split]).softmax(-1).numpy(), parts[split]["actions"])
+                silenced = x[split].clone()
+                silenced[:, :-4] = 0
+                report[f"{split}_zero_neural_features"] = metrics(model(silenced).softmax(-1).numpy(), parts[split]["actions"])
         report["student_sha256"] = digest(output / "student.safetensors", "sha256")
         report["student_trained"] = True
         report["status"] = "completed"
@@ -148,6 +159,7 @@ def train(dataset, base, teacher, output, *, epochs=50, seed=7, hidden=64):
 
 def play(checkpoint, calibration, output, *, data_dir="data/processed/fafb783", episodes=1,
          seed=20000, max_decisions=24, visible=True, disconnected=False):
+    import vizdoom as vzd
     if not 1 <= episodes <= 20 or not 1 <= max_decisions <= 75 or not 0 <= seed <= 2**32 - episodes:
         raise ValueError("Invalid game limits or seed")
     checkpoint, output = Path(checkpoint), Path(output)
@@ -164,6 +176,7 @@ def play(checkpoint, calibration, output, *, data_dir="data/processed/fafb783", 
         raise ValueError("Student neuron mapping mismatch")
     if disconnected:
         controller.control = "disconnected"
+    torch.set_num_threads(4)
     model = SpikingReadout(report["input_size"], report["hidden"])
     model.load_state_dict(load_file(str(checkpoint / "student.safetensors")))
     model.eval()
@@ -171,6 +184,8 @@ def play(checkpoint, calibration, output, *, data_dir="data/processed/fafb783", 
     game = None
     result = {"status": "running", "student_trained": True, "connectome_weights_trained": False,
               "laya_used_during_play": False, "disconnected": disconnected,
+              "experimental_teacher": report.get("experimental_teacher", False),
+              "teacher_accepted": report.get("teacher_accepted"),
               "checkpoint_sha256": report["student_sha256"], "episodes": []}
     try:
         game, buttons = make_game(seed, visible)
@@ -180,7 +195,8 @@ def play(checkpoint, calibration, output, *, data_dir="data/processed/fafb783", 
                 game.new_episode()
                 controller.reset()
                 previous = 0
-                summary = {"seed": seed + episode, "decisions": 0, "return": 0.0, "end_reason": "interrupted"}
+                summary = {"seed": seed + episode, "decisions": 0, "return": 0.0,
+                           "action_counts": dict.fromkeys(ACTIONS, 0), "end_reason": "interrupted"}
                 result["episodes"].append(summary)
                 while not game.is_episode_finished() and summary["decisions"] < max_decisions:
                     decision = controller.decide(game.get_state().screen_buffer)
@@ -198,14 +214,21 @@ def play(checkpoint, calibration, output, *, data_dir="data/processed/fafb783", 
                         if visible:
                             sleep(max(0, 1 / 35 - (perf_counter() - started)))
                     summary["decisions"] += 1
+                    summary["action_counts"][ACTIONS[action]] += 1
                     summary["return"] = game.get_total_reward()
                     previous = action
                     trace.write(json.dumps({"episode": episode + 1, "decision": summary["decisions"],
                         "action": ACTIONS[action], "probabilities": probs.tolist(),
+                        "brain_spikes": decision["spikes"], "descending_spikes": decision["descending_spikes"],
+                        "neural_feature_norm": float(np.linalg.norm(vector[:-4])),
+                        "brain_compute_seconds": decision["compute_seconds"],
                         "voltage_min_mv": decision["voltage_min_mv"], "return": summary["return"]}) + "\n")
                     trace.flush()
-                    print(f"{summary['decisions']:03d}: {ACTIONS[action]} | return={summary['return']:.0f}", flush=True)
+                    print(f"{summary['decisions']:03d}: {ACTIONS[action]} | return={summary['return']:.0f}"
+                          f" | brain spikes={decision['spikes']} | brain compute={decision['compute_seconds']:.2f}s", flush=True)
                 summary["end_reason"] = "game_finished" if game.is_episode_finished() else "decision_limit"
+                # Evaluation only: kill count is never part of the policy input.
+                summary["kills"] = int(game.get_game_variable(vzd.GameVariable.KILLCOUNT))
             result["status"] = "completed"
     except KeyboardInterrupt:
         result["status"] = "interrupted"

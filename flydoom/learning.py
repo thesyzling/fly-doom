@@ -10,7 +10,8 @@ from time import perf_counter
 import numpy as np
 
 from flydoom.calibration import write_json
-from flydoom.learning_data import image_state, prepare, record
+from flydoom.learning_data import image_state, prepare, read_recording, record
+from flydoom.learning_quality import inspect_recording, print_quality
 
 
 DEFAULT_CALIBRATION = Path("runs/calibration-training-v1/report.json")
@@ -69,10 +70,12 @@ def doctor(base, calibration, output):
     return report
 
 
-def run_pipeline(output, *, episodes=10, base=DEFAULT_BASE, calibration=DEFAULT_CALIBRATION,
-                 teacher_epochs=5, student_epochs=50):
+def run_pipeline(output, *, episodes=30, max_episodes=100, seed=30000,
+                 base=DEFAULT_BASE, calibration=DEFAULT_CALIBRATION, teacher_epochs=15, student_epochs=50,
+                 resume=False, max_decisions=75):
     from flydoom import laya_teacher, student
-    if not 5 <= episodes <= 100 or not 1 <= teacher_epochs <= 100 or not 1 <= student_epochs <= 1000:
+    if (not 5 <= episodes <= max_episodes <= 100 or not 0 <= seed <= 2**32 - max_episodes
+            or not 1 <= teacher_epochs <= 100 or not 1 <= student_epochs <= 1000):
         raise ValueError("Require 5..100 episodes, 1..100 teacher epochs and 1..1000 student epochs")
     # Check existing artifacts before asking the player to spend time recording.
     calibration_report = json.loads(Path(calibration).read_text(encoding="utf-8"))
@@ -86,13 +89,34 @@ def run_pipeline(output, *, episodes=10, base=DEFAULT_BASE, calibration=DEFAULT_
         if Path(name).is_absolute() or ".." in Path(name).parts or digest(Path(base) / name, "sha256") != expected:
             raise ValueError("Laya model checksum mismatch")
     output = Path(output)
-    output.mkdir(parents=True, exist_ok=False)
+    if resume:
+        prior = json.loads((output / "pipeline.json").read_text(encoding="utf-8"))
+        if prior["status"] not in {"recording_interrupted", "insufficient_demonstration_coverage"}:
+            raise ValueError("Resume supports pipelines stopped during recording or for insufficient coverage")
+        if any((output / name).exists() for name in ("prepared", "teacher", "student")):
+            raise ValueError("Cannot append data after neural preparation or training has started")
+    else:
+        output.mkdir(parents=True, exist_ok=False)
     report = {"status": "recording", "root": str(output)}
     write_json(output / "pipeline.json", report)
-    recording = record(output / "demonstrations", episodes=episodes)
+    try:
+        recording = record(output / "demonstrations", episodes=episodes, max_episodes=max_episodes,
+                           seed=seed, max_decisions=max_decisions, resume=resume)
+    except BaseException:
+        report["status"] = "recording_interrupted"
+        write_json(output / "pipeline.json", report)
+        raise
     if recording["status"] != "completed":
         report["status"] = "recording_interrupted"
         write_json(output / "pipeline.json", report)
+        return
+    quality = inspect_recording(output / "demonstrations")
+    write_json(output / "quality.json", quality)
+    print_quality(quality)
+    if not quality["ready"]:
+        report["status"] = "insufficient_demonstration_coverage"
+        write_json(output / "pipeline.json", report)
+        print("Recording saved. No neural replay or training started; inspect quality.json for missing actions.", flush=True)
         return
     report["status"] = "preparing_neural_features"
     write_json(output / "pipeline.json", report)
@@ -103,7 +127,9 @@ def run_pipeline(output, *, episodes=10, base=DEFAULT_BASE, calibration=DEFAULT_
     if not teacher_report["teacher_accepted"]:
         report["status"] = "teacher_gate_failed"
         write_json(output / "pipeline.json", report)
-        print("Laya did not beat the baselines and image-shuffle control. No student was trained. Inspect teacher/report.json.", flush=True)
+        print("Laya did not pass all teacher checks. No student was trained. Inspect teacher/report.json.", flush=True)
+        for reason in teacher_report.get("rejection_reasons", []):
+            print(f"  {reason}", flush=True)
         return
     report["status"] = "training_student"
     write_json(output / "pipeline.json", report)
@@ -114,22 +140,49 @@ def run_pipeline(output, *, episodes=10, base=DEFAULT_BASE, calibration=DEFAULT_
     print(report["play_command"], flush=True)
 
 
+def resume_pipeline(run_dir, *, max_episodes=None, base=DEFAULT_BASE, calibration=DEFAULT_CALIBRATION,
+                    teacher_epochs=15, student_epochs=50):
+    source = read_recording(Path(run_dir) / "demonstrations")
+    seed = source.get("seed")
+    if seed is None:
+        if not source["episodes"]:
+            raise ValueError("This older empty recording has no saved seed; start a new recording")
+        seed = source["episodes"][0]["seed"]
+    return run_pipeline(run_dir, episodes=source["minimum_episodes"],
+        max_episodes=source["maximum_episodes"] if max_episodes is None else max_episodes,
+        seed=seed, base=base, calibration=calibration, teacher_epochs=teacher_epochs,
+        student_epochs=student_epochs, max_decisions=source.get("max_decisions", 75), resume=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("run", help="Record your play, prepare features, train Laya, then distill only if the teacher passes")
     p.add_argument("--output", type=Path)
-    p.add_argument("--episodes", type=int, default=10)
+    p.add_argument("--episodes", type=int, default=30, help="Minimum number of episodes")
+    p.add_argument("--max-episodes", type=int, default=100, help="Extend recording up to this limit if coverage is low")
+    p.add_argument("--seed", type=int, default=30000)
     p.add_argument("--base", type=Path, default=DEFAULT_BASE)
     p.add_argument("--calibration", type=Path, default=DEFAULT_CALIBRATION)
-    p.add_argument("--teacher-epochs", type=int, default=5)
+    p.add_argument("--teacher-epochs", type=int, default=15)
+    p.add_argument("--student-epochs", type=int, default=50)
+    p = sub.add_parser("resume", help="Continue a stopped recording, then run the remaining learning pipeline")
+    p.add_argument("--run-dir", type=Path, required=True)
+    p.add_argument("--max-episodes", type=int)
+    p.add_argument("--base", type=Path, default=DEFAULT_BASE)
+    p.add_argument("--calibration", type=Path, default=DEFAULT_CALIBRATION)
+    p.add_argument("--teacher-epochs", type=int, default=15)
     p.add_argument("--student-epochs", type=int, default=50)
     p = sub.add_parser("record", help="Record real keyboard demonstrations; no model required")
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--episodes", type=int, default=10)
+    p.add_argument("--max-episodes", type=int, help="Optionally extend recording until coverage passes")
     p.add_argument("--seed", type=int, default=1000)
     p.add_argument("--max-decisions", type=int, default=75)
     p.add_argument("--random-smoke", action="store_true", help="Headless infrastructure test; explicitly ineligible for training")
+    p = sub.add_parser("inspect", help="Check demonstration coverage and visual diversity without replaying the graph")
+    p.add_argument("--recording", type=Path, required=True)
+    p.add_argument("--output", type=Path, help="Optional new directory for the diagnostic report")
     p = sub.add_parser("prepare", help="Replay saved frames through the calibrated frozen connectome")
     p.add_argument("--recording", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
@@ -140,8 +193,10 @@ def main():
     p.add_argument("--dataset", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--base", type=Path, default=DEFAULT_BASE)
-    p.add_argument("--epochs", type=int, default=5)
+    p.add_argument("--epochs", type=int, default=15)
     p.add_argument("--batch-size", type=int, default=2)
+    p.add_argument("--skip-test", dest="evaluate_test", action="store_false", help="Leave test evaluation out of a development experiment")
+    p.add_argument("--initial-teacher", type=Path, help="Start from a verified teacher on the identical dataset; reset optimizer state")
     p.add_argument("--seed", type=int, default=7)
     p.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     p = sub.add_parser("student", help="Train extra spiking cells from an accepted Laya teacher")
@@ -151,6 +206,8 @@ def main():
     p.add_argument("--base", type=Path, default=DEFAULT_BASE)
     p.add_argument("--epochs", type=int, default=50)
     p.add_argument("--hidden", type=int, default=64)
+    p.add_argument("--experimental-teacher", action="store_true", help="Explicit experimental transfer from a completed teacher that failed its gate; retain its rejection in reports")
+    p.add_argument("--skip-test", dest="evaluate_test", action="store_false", help="Leave the test split unevaluated during development")
     p.add_argument("--seed", type=int, default=7)
     p = sub.add_parser("play", help="Watch the trained extra spiking cells control Doom without Laya")
     p.add_argument("--checkpoint", type=Path, required=True)
@@ -173,8 +230,17 @@ def main():
     try:
         if command == "run":
             run_pipeline(**args)
+        elif command == "resume":
+            resume_pipeline(**args)
         elif command == "record":
             record(**args)
+        elif command == "inspect":
+            report = inspect_recording(args["recording"])
+            print_quality(report)
+            print(json.dumps(report["visual_diversity"], indent=2), flush=True)
+            if args["output"] is not None:
+                args["output"].mkdir(parents=True, exist_ok=False)
+                write_json(args["output"] / "quality.json", report)
         elif command == "prepare":
             prepare(**args)
         elif command == "doctor":

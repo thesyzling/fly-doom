@@ -2,7 +2,7 @@
 
 A research project to train a model based on the real fruit fly connectome to control Doom.
 
-**Status: the experimental neural game loop and a staged local learning pipeline are implemented.** Laya and CUDA PyTorch are installed, the local model is downloaded, and engineering gain checks have passed. Human demonstrations are still needed before training a Doom policy. Natural visual transmission and physiological calibration remain unresolved. Start with the [learning guide](docs/LEARNING.md); see also the [bridge guide](docs/BRIDGE.md), [research plan](docs/RESEARCH.md), and [simulation assumptions](docs/SIMULATION.md).
+**Status: an experimental 64-cell spiking student has been trained using Laya and frozen fly-network outputs.** Student play runs the real 139,255-neuron connection graph and does not load Laya. The teacher still fails its offline acceptance gate; this explicit transfer experiment preserves that rejection. Original fly connections remain fixed, and successful general gameplay is not established. Natural visual transmission and physiological calibration remain unresolved. Start with the [learning guide](docs/LEARNING.md); see also the [bridge guide](docs/BRIDGE.md), [research plan](docs/RESEARCH.md), and [simulation assumptions](docs/SIMULATION.md).
 
 Current tools include data preparation, annotation matching, an experimental neural simulator, stimulation diagnostics, recorded activity playback, a random Doom baseline, a bounded neural game controller, human demonstration recording, local Laya adaptation, and training of an additional spiking neuron group.
 
@@ -10,13 +10,29 @@ Project documentation, source comments, docstrings, and application messages are
 
 ## Start here
 
+On this prepared machine, watch the trained extra spiking group control Doom through the frozen fly graph:
+
+```powershell
+.\.venv\Scripts\python.exe -m flydoom.learning play --checkpoint runs/fly-student-experimental-v2 --max-decisions 75
+```
+
+Laya is absent from student inference. The full graph takes approximately 1.3 seconds per decision on this machine; Doom pauses between actions while the neural simulation computes. This is an experimental transfer, not a claim of a successful Doom policy. Terminal output includes neural spike counts and computation time. The checkpoint and evaluation reports live under `runs/` on this machine, not in Git.
+
+To watch the experimental Laya teacher separately:
+
+```powershell
+.\.venv\Scripts\python.exe -m flydoom.teacher_play --teacher runs/laya-temporal-teacher-v2 --visible --episodes 6
+```
+
+This runs the saved teacher directly, with its own recent actions and images as history. It does not train while playing or load the fly graph. The six-seed pilot and controls are recorded in [VALIDATION.md](docs/VALIDATION.md). The experimental checkpoint lives under `runs/` on this machine, not in Git.
+
 On the prepared machine, run this from the project directory to record your play and begin the learning pipeline:
 
 ```powershell
 .\.venv\Scripts\python.exe -m flydoom.learning run
 ```
 
-Press **ENTER** before each of 10 episodes. Use **LEFT/RIGHT** or **A/D** to move and **SPACE** to fire. Try to align with the target and shoot. **ESC** stops recording and keeps completed episodes. When recording finishes, the command extracts neural features and trains the Laya decision head. It trains the additional 64 spiking cells only if Laya passes the validation gate, then prints the command for watching the student play. Training is an experiment; a failed gate is a possible result. See [LEARNING.md](docs/LEARNING.md) for timing, separate commands, and what each stage means.
+Before pressing **ENTER**, try **LEFT/RIGHT** or **A/D** and **SPACE**; the `input` indicator lets you check that the window receives your keys. The paused check is excluded from the recording. Play naturally after ENTER. The pipeline collects at least **30 episodes**, extending up to 100 if training/validation movement or firing examples are insufficient. **ESC** keeps completed episodes and stops; losing window focus pauses recording until ENTER. A coverage check runs before expensive neural replay. Laya uses class-balanced imitation, and the additional 64 spiking cells are trained only if the teacher passes its validation gate. See [LEARNING.md](docs/LEARNING.md) for timing and separate commands. A failed gate remains a possible experiment result.
 
 The experimental bridge implements the following loop:
 
@@ -48,7 +64,13 @@ A **neuron** is a nerve cell that receives and transmits signals. A **synapse** 
 | `docs/BRIDGE.md` | Explains the adapter, controls, timing, and limitations | Guide to the first game connection |
 | `flydoom/learning.py` | Starts recording, preparation, teacher training, and student training | Run `python -m flydoom.learning run` |
 | `flydoom/learning_data.py` | Records your buttons and replays images through the graph | Keeps episodes in separate learning splits |
+| `flydoom/recording_input.py` | Captures key events, brief taps, and focus changes | Prevents short taps from disappearing between game decisions |
+| `flydoom/learning_quality.py` | Checks action coverage and visual diversity | Rejects insufficient data before expensive neural replay |
 | `flydoom/laya_teacher.py` | Downloads Laya and adapts its decision head | Frozen text encoder; supervised imitation |
+| `flydoom/laya_features.py` | Caches frozen encoder outputs and runs the original decision head | Avoids repeated encoder computation during learning |
+| `flydoom/learning_diagnosis.py` | Fits a tiny balanced subset of training examples | Checks learning mechanics without claiming game skill |
+| `flydoom/temporal_data.py` | Adds strictly past image/action summaries to recorded observations | Preserves neural features and episode splits |
+| `flydoom/teacher_play.py` | Runs a trained Laya teacher and optional controls in Doom | Direct teacher evaluation; no fly graph or student |
 | `flydoom/student.py` | Trains and runs the extra 64 spiking cells | Uses Laya during training, without loading it during play |
 | `flydoom/calibration.py` | Selects a smaller global synaptic gain | Engineering stability checks, not biological validation |
 | `docs/LEARNING.md` | Explains the learning experiment and commands | Read before the first recording |
