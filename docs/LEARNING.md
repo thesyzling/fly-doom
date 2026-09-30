@@ -167,6 +167,8 @@ The matched 15-epoch temporal teacher killed only one of the six targets, with m
 
 ## Experimental transfer to the fly-network readout
 
+To inspect this student interactively while it plays, run `python -m flydoom.live_brain` from the project environment. The [live screen guide](LIVE_VIEW.md) explains the synchronized Doom image, real directed connections, individual fly-cell activity, and the 64 trained cells. The screen starts paused and supports single-decision stepping without changing the model.
+
 The requested first transfer is saved in `runs/fly-student-experimental-v2/`. It uses the existing 511 training decisions in `runs/temporal-prepared-v1/` and probabilities from `runs/laya-temporal-teacher-v2/`; no new keyboard session or dependency installation was needed. Original graph weights are frozen. Only the added group's input, recurrent, and output weights are trained. Laya's offline rejection remains recorded, and the ordinary automatic pipeline retains its gate.
 
 ```powershell
@@ -193,6 +195,46 @@ To reproduce training into a new directory:
 
 The first attempt, `runs/fly-student-experimental-v1/`, stopped on a Windows report-file replacement error and is not a playable checkpoint. Report writing now retries brief permission failures while retaining atomic replacement and the last complete report. The second attempt completed; neither attempt modifies the teacher's acceptance result.
 
+## Refine the existing readout with balanced human actions
+
+`student_refine` provides a separate warm-start experiment without changing the original student implementation or existing checkpoints:
+
+```powershell
+.\.venv\Scripts\python.exe -m flydoom.student_refine --output runs/my-balanced-student --epochs 100
+```
+
+Defaults use `runs/fly-student-experimental-v2/`, the matching temporal dataset, and the temporal Laya teacher v2. Each optimizer update samples **eight human training examples per action**, for 32 examples in total. Minority examples are reused where necessary. The loss remains teacher-probability KL plus 0.25 human cross-entropy. This changes which examples receive training attention; it does not insert a rule to shoot after waiting.
+
+The parent group's normalization statistics remain fixed, AdamW starts with fresh state at learning rate 0.0003, and only the same 64-cell readout is trained. The selected checkpoint minimizes validation NLL averaged equally across the four represented actions. The unchanged parent is eligible as epoch zero. Selection uses neither test metrics nor gameplay rewards. Reports preserve the failed teacher gate, parent/model/data checksums, and hashes of the saved training-only teacher probabilities. Earlier models remain playable.
+
+The completed candidate is `runs/fly-student-balanced-v1/`. It ran 100 epochs and selected epoch 5. Validation ordinary accuracy changed from 71.27% to 69.06%, while balanced accuracy changed from 52.76% to 57.01%. Correct ATTACK predictions increased from 4/14 to 7/14. Validation balanced NLL fell from 1.08832 to 1.03528. Zeroed neural features still produce only WAIT; shuffling the neural-feature block while retaining previous-action indicators gives 44.75% ordinary and 29.50% balanced accuracy. These are development diagnostics, not proof of improved autonomous behavior.
+
+Use `learning play --checkpoint <new directory>` or `live_brain --checkpoint <new directory>` to inspect a refined student. The original model remains the dashboard default until a paired gameplay comparison supports a change.
+
+The completed six-start comparison on development seeds 54000–54005 did **not** improve gameplay: both students killed two targets. Mean return changed from -213.83 to -216.50. The longest WAIT streak shortened from 42 to 20 decisions, and the fraction of WAIT decisions fell from 77.95% to 73.53%, but those changes did not increase target kills. Direct Laya and random controls each killed five targets on these starts. Disabling graph transmission in the new student produced six timeouts and only WAIT actions. The original student remains the default; the candidate is retained as an experiment, not promoted as an improvement.
+
+The verified comparison is `runs/student-refinement-comparison-v1/report.json`. Its rule compares target kills first, then mean return when kill counts tie. Both students and controls used identical seeds and decision bounds. These six starts are now development data, and a later final assessment requires another untouched set. A useful next experiment is to gather teacher corrections on states encountered by the student's own policy, including recovery after poor moves, instead of repeatedly reweighting the same human trajectories. Such corrections would still be imperfect teacher labels and require independent evaluation.
+
+To inspect the unpromoted candidate without replacing an existing dashboard:
+
+```powershell
+.\.venv\Scripts\python.exe -m flydoom.live_brain --checkpoint runs/fly-student-balanced-v1 --port 8767
+```
+
+## Teacher suggestions on student-controlled trajectories
+
+The next workflow records the student's own decisions, asks the frozen teacher for suggestions after collection, and trains a separate candidate while retaining human examples. See [CORRECTIONS.md](CORRECTIONS.md) for the stages, commands, existing library roles, and validation rules. Original fly weights remain fixed; this is imitation on additional observations, not reward-based learning.
+
+The completed collection has 316 training decisions and 106 validation decisions. Exact repeats of training inputs remove 18 validation decisions, leaving 88 for checkpoint selection alongside the existing 181 human validation decisions. Laya disagrees with 193 training actions, including 168 WAIT decisions. These are suggestions from the still-unaccepted teacher, not verified correct actions.
+
+The first run, `runs/fly-student-corrected-v1`, retained the original model at epoch zero because no updated checkpoint met both human-accuracy constraints. A second run used a 30-times smaller learning rate (0.00001 instead of 0.0003), keeping the same loss and selection rule. `runs/fly-student-corrected-v2` selected epoch 11 of 100: correction-validation KL fell from 0.84144 to 0.64391; human accuracy changed from 71.27% to 66.85%, and balanced accuracy from 52.76% to 51.43%. The comparison must therefore weigh closer teacher agreement against reduced human imitation. No reserved gameplay outcome selected these weights. See [VALIDATION.md](VALIDATION.md) for the separate game comparison.
+
+On starts 57000-57005, the parent and corrected student both killed five targets. Mean return improved from -21.33 to -11.83, but WAIT usage rose from 63.27% to 70.83%. Direct Laya killed all six targets; disabling graph transmission in the candidate produced zero kills and only WAIT. The corrected model remains an optional experiment because this small score gain does not establish improved success or recovery. Three reserved initial frames exactly match correction-training frames. Inspect the candidate with `python -m flydoom.live_brain --checkpoint runs/fly-student-corrected-v2 --port 8767` from the activated environment. The original remains the default.
+
+## Action memory experiment and recovery review
+
+The [action memory guide](ACTION_MEMORY.md) explains a separate candidate that adds recent buttons and elapsed decisions to the same 64 cells. Its new inputs start with zero weights, preserving the original policy before training. It uses the same correction data and loss as correction-v2; native comparison uses six distinct opening frames checked against known training and validation recordings. The guide also shows how to open an interactive replay of a failed and successful episode, comparing student choices with teacher advice. Results are recorded in [VALIDATION.md](VALIDATION.md).
+
 ## Setup on a fresh machine
 
 This machine already has the dependencies, model, graph, and calibration. Do not repeat the download here. On another machine, first prepare the base environment and graph following the README, then install the optional learning packages:
@@ -215,6 +257,6 @@ The smaller gain passed bounded no-input, patterned-input, sustained-input, reco
 
 The added-group training code, frozen-teacher-encoder behavior, weight saving/reloading, and data rejection paths have automated tests. Actual Laya inference and a gradient update were tested on the RTX 3060 Laptop GPU, with approximately 2,025 MiB peak PyTorch allocation in that small check. Full training memory and throughput depend on the run.
 
-The first human dataset had 205 decisions. The revised recording contains 872 decisions across 69 episodes: 511 training, 181 validation, and 180 test. It passes the action-coverage prerequisite. Temporal teacher training, small autonomous gameplay comparisons, and an explicit experimental student transfer have completed using this recording, without another keyboard session. No teacher has passed the offline distillation gate. The experimental student learns only the added group; the small results above do not establish a general advantage. Natural fly vision, biological calibration, game-reward learning, selective original-edge training, and live brain activity visualization synchronized with Doom remain later work. The existing browser viewer replays separate recorded neural experiments.
+The first human dataset had 205 decisions. The revised recording contains 872 decisions across 69 episodes: 511 training, 181 validation, and 180 test. It passes the action-coverage prerequisite. Temporal teacher training, small autonomous gameplay comparisons, and an explicit experimental student transfer have completed using this recording, without another keyboard session. No teacher has passed the offline distillation gate. The experimental student learns only the added group; the small results above do not establish a general advantage. Natural fly vision, biological calibration, game-reward learning, and selective original-edge training remain later work. The live browser observer now displays neural activity synchronized with student-controlled Doom; the older experiment viewer separately replays recorded neural trials.
 
 Upstream references: [Laya repository](https://github.com/NandhaKishorM/laya), [Laya sequence/model code](https://github.com/NandhaKishorM/laya/blob/main/laya/common.py), [upstream fine-tuning example](https://github.com/NandhaKishorM/laya/blob/main/docs/finetune_browser_agent.md). Upstream benchmark claims are not measurements of this Doom pipeline.

@@ -200,3 +200,128 @@ This three-start pilot demonstrates an operational brain-to-student-to-buttons r
 The first attempt, `runs/fly-student-experimental-v1/`, failed at epoch 54 during atomic report replacement with Windows `PermissionError`. Its failed status and partial artifacts were retained. Report replacement now retries brief permission failures for a bounded interval without truncating the previous report. The exact process that held the file was not identified. The second training attempt completed and its model, implementation, and teacher-report checksums match.
 
 **80 tests passed.** New or extended checks verify that experimental transfer preserves the teacher's rejection and original report, default rejection remains enforced, test skipping works, saved student play never loads Laya, kill/action metrics are recorded, and transient/permanent replacement failures preserve complete reports. Native gameplay is recorded separately from these automated tests.
+
+## Live synchronized neural observer (September 30, 2026)
+
+Added `flydoom.live_brain` and a local browser screen, leaving `student.py`, the trained checkpoint, the simulator, and the recorded-experiment viewer unchanged. The observer verifies the saved student's implementation/model hashes and the calibration/graph mapping, then runs the same image → graph → student → buttons computation. Read-only forward hooks capture actual added-cell drive and mean spike activity. Exact root IDs remain strings in JSON and JavaScript. CSR target rows expose incoming edges; CSC source columns expose outgoing edges. A bounded strongest-edge selection keeps the diagram readable while any fly cell can be searched by exact ID.
+
+The browser pairs the pre-action game observation with that decision's neural response and probabilities; reward is measured after the action. A sequence identifier keeps asynchronous neuron inspection tied to the displayed snapshot. Full-neuron observations are retained in a 24-snapshot memory buffer, and history resets visually at episode boundaries. Pause and single-step controls apply between decisions. Final reports explicitly retain the absence of Laya inference and the teacher's rejected status.
+
+`runs/live-observer-validation-v1/` ran native Doom on development seed 51001 while driven from the browser. It produced **16 decisions, one target kill, and return 39**. Comparison with episode two of `runs/fly-student-connected-eval-v1/` found identical actions and returns and a **maximum absolute probability difference of 0.0**. `parity.json` records this result and confirms the student implementation hash is unchanged. This is an observer-equivalence check, not an independent gameplay-success estimate.
+
+`runs/live-observer-ui-v2/` is a separate five-decision bounded UI check on the same seed. Its zero kills and return -20 reflect the intentional decision limit, not a completed gameplay trial. The first browser automation wait used a 30-second deadline that was too short for the full episode under browser-test load; the game subsequently completed normally. The bounded UI check then exercised three single steps followed by Run. The page remained paused between steps, disabled run controls at completion, rendered all 64 cells, and exposed learned action and real fly-neuron connections.
+
+Headless Edge checks are saved in `runs/live-ui-check-report.json` and `runs/live-ui-final-check-report.json`, with desktop/mobile screenshots under `runs/live-dashboard-*.png`. The mobile page measured 390 pixels for both viewport and document width. Direct pointer tests followed an exact graph node ID and verified wheel zoom, drag pan, and reset. An initial pointer probe used off-viewport coordinates after browser emulation reset; rerunning with an explicit desktop viewport passed. The final page check reported no JavaScript exceptions or resource errors. A prior missing favicon warning was removed by supplying a local data-URL icon.
+
+**86 tests passed.** The six new tests cover exact IDs and signed connection direction, unmodified forward outputs/weights under telemetry hooks, arithmetic action-logit contributions, pause/step and observation timing in the game loop, HTTP control origin/route bounds, and rejection of incomplete checkpoints before graph loading. The browser diagram is schematic, and the live activity is simulated; no claim of anatomical morphology, biological calibration, or causal action explanation is added.
+
+## Balanced readout refinement and new starts (September 30, 2026)
+
+Added `flydoom.student_refine` as a separate training entry point, preserving `student.py`, the original checkpoint, and the live observer. The experiment warm-starts the existing 64-cell group, freezes its normalization, resets AdamW at learning rate 0.0003, and gives each update eight human training examples from each of the four actions. The distillation loss remains teacher-probability KL plus 0.25 human cross-entropy. Validation selection now minimizes class-balanced NLL, with the untouched parent eligible as epoch zero. This compares complete training configurations; sampling is not the only changed optimization setting.
+
+`runs/fly-student-balanced-v1/` completed 100 epochs, selecting epoch 5. Laya probabilities were computed on the 511 training observations only and saved with a checksum. The teacher's failed gate remains recorded; no game rewards, evaluation seeds, or test metrics selected the checkpoint. The original 181-example validation split was reused as development data.
+
+| Validation metric | Original student | Balanced refinement |
+|---|---:|---:|
+| Ordinary accuracy | 71.27% | 69.06% |
+| Balanced accuracy | 52.76% | 57.01% |
+| Ordinary NLL | 0.73272 | 0.78725 |
+| Balanced NLL | 1.08832 | 1.03528 |
+| Correct ATTACK examples | 4/14 | 7/14 |
+
+The new checkpoint predicts WAIT on all validation examples when neural features are zeroed (64.09% ordinary / 25.00% balanced accuracy). Shuffling the neural-feature block while retaining previous-action indicators gives 44.75% ordinary / 29.50% balanced accuracy. These controls measure dependence on the neural representation, not a topology-specific advantage. `parameter_changes.json` records changes in the input, recurrent, and action-readout parameters and verifies unchanged normalization and student implementation.
+
+**90 tests passed.** Four added tests check reproducible balanced batches with rare classes, actual weight changes while parent files and normalization remain unchanged, retention of epoch-zero weights when validation does not improve, training-only teacher queries with test metrics skipped, and early rejection of a modified teacher.
+
+Paired native Doom evaluation used six previously untested starts, **54000–54005**, disjoint from all human recording seeds and the earlier gameplay pilots. The student checkpoints were selected using offline validation before candidate gameplay. All policies used four game tics per decision and a 75-decision cap; every evaluated episode ended in the game, not at the external cap. Failed episodes timed out. The original student evaluation began before the candidate was trained; its observed results make this a development comparison rather than a pristine final benchmark.
+
+| Policy | Target kills / 6 | Mean return | Report directory under `runs/` |
+|---|---:|---:|---|
+| Original student | 2/6 | -213.83 | `student-generalization-baseline-v1` |
+| Balanced student | 2/6 | -216.50 | `student-generalization-balanced-v1` |
+| Balanced student, transmission disabled | 0/6 | -300.00 | `student-generalization-disconnected-v1` |
+| Direct temporal Laya | 5/6 | -77.67 | `student-generalization-controls-v1` |
+| Training-derived timing lookup | 3/6 | -141.50 | `student-generalization-controls-v1` |
+| Uniform random actions | 5/6 | -55.33 | `student-generalization-controls-v1` |
+
+Original student returns were [-315, -340, -340, 51, -370, 31]. Candidate returns were [-340, -320, -320, 10, -360, 31]. Both students succeeded only on seeds 54003 and 54005. The longest WAIT streak fell from 42 decisions to 20; aggregate WAIT usage fell from 258/331 decisions (77.95%) to 250/340 (73.53%). ATTACK counts were 46 and 45, respectively. These decision-weighted percentages include longer failed episodes; they should not be treated as independent samples or a game-level success measure.
+
+`runs/student-refinement-comparison-v1/report.json` verifies episode seeds, trace lengths, action counts, rewards, checkpoint hashes, and separation from demonstration seeds. It compares target kills first, then mean return for tied kill counts. The candidate does not surpass the parent under that rule, so **the original student remains the default**. Both the new weights and the negative result are retained. The disconnected candidate produced 450 WAIT decisions and no kills; this supports dependence on neural signals but does not establish an advantage of the biological topology over other feature generators.
+
+This experiment reduced prolonged waiting without improving task success. It does not support a learned advantage over random actions on this basic scenario. Further work should collect additional policy-relevant states and evaluate recovery behavior; merely increasing training epochs on the same human examples is not established as a solution. No correction-data collection or reward-based training is claimed in this iteration.
+
+## Teacher suggestions on student trajectories (September 30, 2026)
+
+Implemented `correction_data.py` and `correction_training.py` without changing the hash-locked student runtime or simulator. The original student controls every recorded button; the frozen Laya teacher is queried afterward on causal observations reconstructed from those frames and actual past actions. Policy recordings have a separate schema from human demonstrations. Reward and kill count are stored only as outcomes, never as teacher input or training targets. The teacher's failed acceptance gate remains unchanged.
+
+`student-correction-observations-v1` contains four training episodes (56000-56003) and two validation episodes (56004-56005). Since all four training episodes succeeded, a second collection deliberately included previously failed development starts 54000-54002 as training and 54003 as validation. Those earlier starts are no longer independent evaluation data for this candidate. Byte-preserving merge output `student-correction-merged-v1` contains **316 training and 106 validation decisions across ten episodes**. Reserved evaluation seeds 57000-57005 were declared before collection and are disjoint from both human and correction episode seeds.
+
+Different seeds produced identical images and trajectories: 56000, 56001, 56003, and 56004 repeat the same 18-decision trajectory. Before checkpoint selection, exact feature-vector plus causal teacher-state matches against either training source removed 18 correction validation rows, leaving **88**. Near duplicates, shared scenarios, and the reused human validation split remain limitations. The post-selection initial-frame audit found that reserved starts 57003-57005 also exactly repeat correction-training opening frames. The other three opening frames did not match correction training; this does not certify their full trajectories or independence from human examples.
+
+`student-correction-labels-v1` saves frozen teacher probabilities and checksums. The 511 existing human training probabilities were reused from the verified balanced-training cache; only probabilities were reused, not that candidate's weights. On correction training rows, Laya disagrees with **193/316** recorded actions, including **168 WAIT** actions. Teacher argmax counts are [95 WAIT, 35 LEFT, 158 RIGHT, 28 ATTACK], versus the student's [257, 27, 8, 24]. These disagreements are not verified errors.
+
+Each update uses 32 human and 32 correction observations. The loss gives half its weight to human distillation (KL plus 0.25 human cross-entropy) and half to correction KL, with a three-to-one weight for disagreement versus agreement. Parent mean and scale stay fixed; AdamW resets. Checkpoint selection minimizes correction-validation KL plus 0.25 human-validation NLL, subject to both human accuracies remaining within five percentage points of the parent. Epoch zero remains eligible. No human test metrics or reserved gameplay outcomes select the model.
+
+The first 100-epoch run at learning rate 0.0003, `fly-student-corrected-v1`, retained the unchanged parent at epoch zero because no updated checkpoint met both constraints. The second run at 0.00001, `fly-student-corrected-v2`, selected **epoch 11 of 100** using the same development validation rule. These are two optimization trials, not a single predeclared learning rate.
+
+| Validation metric | Parent | Selected correction candidate |
+|---|---:|---:|
+| Human ordinary accuracy | 71.27% | 66.85% |
+| Human balanced accuracy | 52.76% | 51.43% |
+| Human NLL | 0.73272 | 0.79419 |
+| Correction KL (88 retained rows) | 0.84144 | 0.64391 |
+| Correction teacher argmax agreement | 34.09% | 35.23% |
+
+`parameter_changes.json` verifies changes in input, recurrent, and readout weights, unchanged mean/scale, and unchanged parent, teacher report, and student implementation hashes. Only the added 64-cell group trains. The selected model's SHA-256 is `7aed99a3f699b282bb611ecb26404a79e950103bf8fb75bc2c2261d055f70e20`.
+
+**100 tests passed.** Ten correction tests cover causal actual-action history, exclusion of injected reward/future fields even when checksums are updated, early seed-overlap rejection, immutable teacher queries, actual parameter changes with parent/normalization preserved, disagreement weighting, modified-target rejection, byte-preserving merges and duplicate-seed rejection, parent retention under human regression, and validation deduplication against both training sources.
+
+The selected candidate and parent were compared in native Doom on **57000-57005**, with four tics per decision and a 75-decision cap. Every episode ended through the game. The parent's evaluation had completed before candidate selection; its aggregate outcomes were inspected only after the candidate was selected. Baseline, candidate, and disconnected reports are under `student-correction-{baseline,candidate,disconnected}-eval-v1`; direct-policy controls are under `student-correction-controls-v1`.
+
+| Policy | Target kills / 6 | Mean return |
+|---|---:|---:|
+| Original student | 5/6 | -21.33 |
+| Correction candidate | 5/6 | -11.83 |
+| Candidate, graph transmission disabled | 0/6 | -300.00 |
+| Direct temporal Laya | 6/6 | 22.33 |
+| Training-derived timing lookup | 3/6 | -141.50 |
+| Uniform random actions | 3/6 | -171.50 |
+
+Parent returns were [63, 71, -355, 31, 31, 31]; candidate returns were [63, 71, -310, 35, 35, 35]. Both fail on 57002. ATTACK counts fell from 22 to 7, while WAIT usage rose from 93/147 (63.27%) to 102/144 (70.83%) and the longest WAIT streak grew from 10 to 22. Thus the candidate gains 9.5 mean reward points without increasing kills or demonstrating recovery. The disconnected candidate made 450 WAIT decisions and had zero descending-feature norms. This supports neural-signal dependence, not a special advantage of biological topology.
+
+`student-correction-comparison-v1/report.json` verifies matching seeds, checkpoint hashes, trace counts, rewards, and action totals. The candidate improves under the stated kills-first, mean-return-second rule, but this six-start result, repeated scenes, reduced human accuracy, and increased waiting do not justify a broad upgrade claim. **The original remains the default**; the corrected model is separately playable in the interactive observer. No game-reward learning or original fly-edge training is claimed. Future recovery work needs more varied observations and a stronger teacher/student representation, rather than assuming more epochs solve the remaining failure.
+
+## Action memory and recovery diagnosis (September 30, 2026)
+
+Recorded correction-v2 on the known failed start 57002 and successful start 57003 in `recovery-diagnosis-observations-v1`, then queried the frozen teacher into `recovery-diagnosis-labels-v1`. These new observations and labels were used for diagnosis only, not memory training. The failed run reproduced return -310 with 75 decisions: WAIT 63, LEFT zero, RIGHT ten, ATTACK two. Laya suggested LEFT 50 times, disagreed with 56 actions overall, and suggested an active button for 49 WAIT decisions. The longest WAIT streak was 22, starting at decision 42. The successful comparison took 17 decisions and returned 35. These are reused development starts, not a fresh success estimate.
+
+`recovery-review-v1/index.html` is a standalone interactive replay with the actual pre-action frame, recorded button/probabilities, teacher advice, causal history, and 64-cell activity. Activity is recomputed from the verified checkpoint and saved neural features, with each probability vector matched to the original recording within absolute tolerance 1e-6. It is not live training. On decision 41 of the failed run, the target is visibly left, the student selects RIGHT, and teacher advice favors LEFT. This observation alone does not establish which internal representation causes the error.
+
+Added `action_memory.py` and `correction_training train --memory`. Seventeen causal inputs encode three past buttons, elapsed decisions, ages since active/shooting actions, and availability flags. The original neural channels and previous-action channels retain their normalization; new memory channels use zero mean and unit scale. New weights start at zero to preserve initial policy behavior. The same 64 engineered cells train; the original fly edges remain fixed, and the cells' internal state still resets every decision. This tests explicit action/timing information, not biological memory or the teacher's richer visual history.
+
+`fly-student-memory-v1` used the same parent, data, cached teacher probabilities, loss, seed 29, learning rate 0.00001, and 100 epochs as correction-v2. It selected epoch 11 with the same human-accuracy constraints. Human ordinary/balanced accuracies remain 66.85%/51.43%. Correction-validation KL changed from 0.64391 to 0.63918. The 181-example human development validation and 88 deduplicated correction-validation rows select the checkpoint; test metrics and game outcomes do not. The teacher's rejection remains recorded.
+
+`memory_effect_audit.json` verifies unchanged parent weights and original normalization channels. Learned memory weights reach maximum absolute value 0.001562. On the failed episode's fixed 75 saved inputs, removing memory changes probabilities by at most 0.01877 but changes zero argmax actions. Both replay conditions yield [63 WAIT, 0 LEFT, 10 RIGHT, 2 ATTACK]. This is an off-policy replay diagnostic, not a new autonomous trajectory or evidence of recovery.
+
+The live observer now supports the separate `action_memory_student_v1` schema and verifies its implementation/mapping hash before graph loading. Its memory panel exposes actual normalized input values and learned edges. Previous-action edges still use the final four columns. Explicit `--seeds` lists allow noncontiguous comparisons; `--disconnected` supplies the graph-transmission control. Old student checkpoints remain supported without modifying `student.py` or `simulation.py`.
+
+**109 tests passed.** Nine new tests cover online/offline causal-history equality, episode reset and real applied buttons in the native loop fixture, unchanged initial parent logits and feature ordering, training new memory weights without changing the parent, separate memory/previous-action edge columns, early implementation-hash rejection, rejection of memory checkpoints by the standard collector before graph loading, and review streak/disagreement summaries. The full suite passed without warnings. JavaScript syntax checks passed.
+
+Headless Edge checks in `memory-review-ui-check.json` verified both recorded episodes, frame loading, 64 cells, slider seeking, replay advancement, episode reset, and a 390-pixel page without horizontal overflow. The live memory candidate displayed all 17 inputs and 64 cells, and clicking `since_active` showed its value and twelve learned edges. No JavaScript exceptions occurred. Screenshots are `recovery-review-desktop.png` and `memory-live-desktop.png`. The first restricted-browser attempts failed because Edge's GPU subprocess could not start; the separate-profile browser test then ran successfully outside that restriction. These UI checks did not send gameplay controls to the evaluation runs.
+
+For the gameplay comparison, 48 starts (58000-58047) were scanned without taking actions, yielding 25 distinct opening images. `memory-evaluation-plan-v1/report.json` selected the first six whose exact opening pixels were absent from 715 distinct known human/student train/validation frames: **58000, 58002, 58004, 58006, 58007, 58010**. Human test frames were not inspected. The selection was made without gameplay outcomes and favors right-side and central positions; it is not a balanced location sample. Different opening pixels do not guarantee different trajectories or broad generalization in this same basic map.
+
+All six native episodes completed under each policy using four game tics per decision and a 75-decision limit. Reports are `memory-{baseline,candidate,disconnected}-eval-v1` and `memory-controls-v1`; `memory-comparison-v1/report.json` checks plan and checkpoint hashes, episode seeds, trace lengths, returns, and action totals.
+
+| Policy | Target kills / 6 | Mean return |
+|---|---:|---:|
+| Correction-v2 student | 2/6 | -200.17 |
+| Student with action memory | 3/6 | -153.17 |
+| Memory student, graph transmission disabled | 0/6 | -300.00 |
+| Direct temporal Laya | 5/6 | -86.83 |
+| Training-derived timing lookup | 1/6 | -253.83 |
+| Uniform random actions | 2/6 | -203.17 |
+
+The first five episode returns match: [55, 39, -315, -330, -325]. On 58010, correction-v2 times out after 75 decisions with return -325; the memory candidate kills the target in 34 decisions with return -43. Overall WAIT usage changes from 249/328 (75.91%) to 216/287 (75.26%), while the longest WAIT streak remains 33 decisions. The disconnected candidate makes 450 WAIT decisions with zero neural-feature norms. This is one additional success on six development starts, not a resolved waiting problem or established robust advantage. Direct Laya remains stronger on this pilot. The original checkpoint remains the default, and the memory candidate is separately playable.
+
+A **post-hoc single-start ablation** tested the newly successful start 58010. `fly-student-memory-zeroed-control-v1` copies the selected memory checkpoint and zeros only its 17 memory-input columns; all other tensors and original input columns are verified identical. It does not optimize any weights. The ablated run, `memory-zeroed-eval-v1`, times out after 75 decisions with return -325 and zero kills, versus the active-memory model's one kill and return -43. The first action difference is decision 9: active memory chooses ATTACK, while zeroed memory chooses RIGHT. Before and including that decision, graph spike totals and neural-feature norms match exactly. `memory-ablation-comparison-v1/report.json` verifies model and report hashes, tensor equality, outcomes, and this divergence. This supports a causal contribution of the learned memory inputs in that one selected example; it is not a six-start ablation or evidence that the other failures are solved.
