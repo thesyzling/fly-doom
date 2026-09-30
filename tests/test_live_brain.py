@@ -164,6 +164,53 @@ def test_local_http_controls_and_route_limits(catalog, tmp_path):
         worker.join()
 
 
+def test_teaching_waits_for_review_even_at_episode_boundary(catalog, tmp_path, monkeypatch):
+    from flydoom import live_brain
+    current = {"ticks": 0}
+    seeds = []
+    game = SimpleNamespace(set_seed=seeds.append, new_episode=lambda: current.update(ticks=0),
+        is_episode_finished=lambda: current["ticks"] >= 4,
+        get_total_reward=lambda: -current["ticks"], get_game_variable=lambda variable: 0,
+        get_state=lambda: SimpleNamespace(screen_buffer=np.zeros((8, 8, 3), dtype=np.uint8)),
+        make_action=lambda action, tics: current.update(ticks=current["ticks"] + 1), close=lambda: None)
+    monkeypatch.setattr(live_brain, "make_game", lambda *args: (game, ["ATTACK", "MOVE_RIGHT", "MOVE_LEFT"]))
+    session = LiveSession(catalog, tmp_path / "teach", {"student_sha256": "fixture"},
+                          seeds=[60010, 60012], teach=True, autoplay=True)
+    worker = Thread(target=session.run)
+    worker.start()
+    try:
+        wait_until(lambda: session.state().get("decision") == 0)
+        assert session.paused and session.metadata()["teaching"]
+        session.control("run")
+        wait_until(lambda: len(session.report["episodes"]) == 1)
+        sleep(.05)
+        assert session.state()["episode"] == 1 and session.state()["decision"] == 1
+        assert seeds == [60010] and session.paused
+        # A completed episode's last input is still available for correction.
+        seq = session.state()["sequence"]
+        assert session.save_feedback(seq, "MOVE_LEFT")["count"] == 1
+        session.control("run")
+        worker.join(3)
+        assert not worker.is_alive() and session.phase == "completed"
+        assert seeds == [60010, 60012]
+    finally:
+        with session.condition:
+            session.stopped = True
+            session.condition.notify_all()
+        worker.join(3)
+
+
+def test_teaching_repeated_clicks_do_not_queue_past_review(catalog, tmp_path):
+    session = LiveSession(catalog, tmp_path / "teach", {"student_sha256": "fixture"}, teach=True)
+    session.control("run")
+    session.control("step")
+    assert session.steps == 1 and session.paused
+    assert session.permit()
+    session.control("step")
+    session.control("run")
+    assert session.steps == 0 and session.paused
+
+
 def test_observer_rejects_incomplete_checkpoint_before_loading_graph(tmp_path):
     (tmp_path / "report.json").write_text(json.dumps({"schema": "spiking_student_v1", "status": "running"}))
     with pytest.raises(ValueError, match="not complete"):

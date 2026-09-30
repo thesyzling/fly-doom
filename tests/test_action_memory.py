@@ -115,7 +115,15 @@ def test_live_memory_uses_actual_buttons_and_resets_between_explicit_seeds(catal
     monkeypatch.setattr(live_brain, "make_game", lambda *args: (game, ["ATTACK", "MOVE_RIGHT", "MOVE_LEFT"]))
     session = live_brain.LiveSession(expanded, tmp_path / "live", {"student_sha256": "fixture"},
         seeds=[70000, 70002], autoplay=True)
+    forwarded = []
+    handle = model.register_forward_pre_hook(lambda module, args: forwarded.append(args[0][0].detach().numpy().copy()))
     session.run()
+    handle.remove()
+    snapshots = [s for s in session.samples if s["decision"]]
+    for captured, observed in zip(forwarded, snapshots):
+        np.testing.assert_array_equal(observed["features"], captured)
+    assert len(snapshots) == len(forwarded) == 4
+    assert "features" not in session.state()
     assert session.phase == "completed" and seeds == [70000, 70002]
     rows = [json.loads(line) for line in (session.output / "decisions.jsonl").read_text().splitlines()]
     memory = action_memory.ActionMemory()

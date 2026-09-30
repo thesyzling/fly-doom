@@ -20,6 +20,8 @@ from flydoom.calibration import load_calibrated, output_features, write_json
 from flydoom.data import digest
 from flydoom.learning_data import ACTIONS, make_game
 from flydoom.live_activity import ConnectionCatalog, ReadoutTelemetry, frame_png
+from flydoom.live_map import build_map, activity_snapshot
+from flydoom.human_feedback import FeedbackStore
 
 
 STATIC = Path(__file__).parent / "web" / "live"
@@ -54,7 +56,7 @@ def load_checkpoint(checkpoint, calibration, data_dir):
 
 
 class LiveSession:
-    def __init__(self, catalog, output, report, *, episodes=3, seed=51000, max_decisions=75, autoplay=False, seeds=None):
+    def __init__(self, catalog, output, report, *, episodes=3, seed=51000, max_decisions=75, autoplay=False, seeds=None, feedback_split="train", teach=False):
         if seeds is not None:
             if not 1 <= len(seeds) <= 20 or len(set(seeds)) != len(seeds) or any(not 0 <= s < 2**32 for s in seeds):
                 raise ValueError("Require 1..20 distinct uint32 seeds")
@@ -66,12 +68,16 @@ class LiveSession:
         self.output.mkdir(parents=True, exist_ok=False)
         self.episodes, self.seed, self.max_decisions = episodes, seed, max_decisions
         self.seeds = list(seeds) if seeds is not None else list(range(seed, seed + episodes))
+        self.feedback = FeedbackStore(self.output / "feedback", report, feedback_split,
+                                      self.seeds, self.model.input.in_features)
         self.memory = action_memory.ActionMemory()
         self.condition = Condition()
-        self.paused, self.stopped, self.steps, self.busy = not autoplay, False, 0, False
+        self.teaching = teach
+        self.paused, self.stopped, self.steps, self.busy = teach or not autoplay, False, 0, False
         self.phase, self.error = "loading", None
         self.samples = deque(maxlen=24)
         self.sequence = 0
+        self.map_data = None
         self.report = {"schema": "live_student_observation_v1", "status": "running", "episodes": [],
                        "laya_used_during_play": False, "connectome_weights_trained": False,
                        "checkpoint_sha256": report["student_sha256"],
@@ -91,10 +97,13 @@ class LiveSession:
             if command == "stop":
                 self.stopped = True
             elif command == "run":
-                self.paused, self.steps = False, 0
+                self.paused, self.steps = (True, 1) if self.teaching else (False, 0)
             else:
                 self.paused = True
-                self.steps = min(self.steps + 1, 5) if command == "step" else 0
+                self.steps = (1 if self.teaching else min(self.steps + 1, 5)) if command == "step" else 0
+            if self.teaching and self.busy and command in {"run", "step"}:
+                # Repeated clicks must not queue decisions past the review point.
+                self.steps = 0
             self.condition.notify_all()
 
     def permit(self):
@@ -107,7 +116,7 @@ class LiveSession:
             self.busy = True
             return True
 
-    def publish(self, frame, episode, number, previous, probabilities, telemetry, decision, reward):
+    def publish(self, frame, episode, number, previous, probabilities, telemetry, decision, reward, features=None):
         net = self.controller.network
         self.sequence += 1
         sample = {"sequence": self.sequence, "episode": episode, "decision": number,
@@ -122,6 +131,7 @@ class LiveSession:
                   "voltage_min_mv": decision.get("voltage_min_mv", net.params.rest_mv)}
         if getattr(self.model, "action_memory", False):
             sample["memory"] = action_memory.encode(self.memory.observe()).tolist()
+        sample["features"] = None if features is None else features.copy()
         with self.condition:
             self.samples.append(sample)
             self.busy = False
@@ -133,16 +143,18 @@ class LiveSession:
                 "hidden": self.catalog.hidden, "actions": ACTIONS, "episodes": self.episodes,
                 "seed": self.seed, "max_decisions": self.max_decisions,
                 "seeds": self.seeds, "memory_features": list(self.catalog.memory_names),
-                "teacher_accepted": self.report["teacher_accepted"], "output": str(self.output)}
+                "teacher_accepted": self.report["teacher_accepted"], "output": str(self.output),
+                "feedback": self.feedback.status(), "teaching": self.teaching}
 
     def state(self):
         with self.condition:
             status = {"phase": self.phase, "paused": self.paused, "busy": self.busy,
                       "error": self.error, "finished_episodes": [dict(e) for e in self.report["episodes"]]}
             sample = self.samples[-1] if self.samples else None
+            status["feedback"] = self.feedback.status(sample["sequence"] if sample else None)
         if sample is None:
             return status
-        public = {key: value for key, value in sample.items() if key not in {"voltage", "counts", "drive", "activity"}}
+        public = {key: value for key, value in sample.items() if key not in {"voltage", "counts", "drive", "activity", "features"}}
         public["student_spikes"] = np.rint(sample["activity"] * 8).astype(int).tolist()
         counts = sample["counts"]
         ranked = self.catalog.strongest(counts, 10)
@@ -174,6 +186,28 @@ class LiveSession:
                 i = int(key.split(":")[1])
                 history.append({"decision": s["decision"], "spikes": int(round(float(s["activity"][i]) * 8))})
         return {**result, "history": history}
+
+    def brain_map(self):
+        if self.map_data is None:
+            self.map_data = build_map(self.catalog)
+        return self.map_data
+
+    def save_feedback(self, sequence, action):
+        with self.condition:
+            if self.busy or (not self.paused and self.phase not in {"completed", "stopped"}):
+                raise ValueError("Pause and wait for the current decision before labeling")
+            if type(sequence) is not int or not self.samples or self.samples[-1]["sequence"] != sequence:
+                raise ValueError("The displayed decision changed; review the latest frame")
+            if self.report["disconnected"]:
+                raise ValueError("Disconnected evaluation controls cannot supply training corrections")
+            return self.feedback.save(self.samples[-1], action)
+
+    def map_activity(self, sequence):
+        with self.condition:
+            sample = next((s for s in self.samples if s["sequence"] == sequence), None)
+        if sample is None:
+            raise ValueError("Observation expired; request the current decision")
+        return activity_snapshot(sample)
 
     def run(self, on_finished=None):
         import vizdoom as vzd
@@ -215,7 +249,7 @@ class LiveSession:
                         number += 1
                         counts[ACTIONS[action]] += 1
                         self.publish(frame, episode + 1, number, previous, probabilities, telemetry,
-                                     decision, game.get_total_reward())
+                                     decision, game.get_total_reward(), features=vector)
                         trace.write(json.dumps({"episode": episode + 1, "decision": number,
                             "action": ACTIONS[action], "probabilities": probabilities.tolist(),
                             "return": game.get_total_reward(), "brain_spikes": decision["spikes"],
@@ -233,6 +267,10 @@ class LiveSession:
                     with self.condition:
                         self.report["episodes"].append(summary)
                     print(f"Episode {episode + 1}: {summary}", flush=True)
+                    if self.teaching and episode + 1 < self.episodes:
+                        with self.condition:
+                            while self.paused and not self.steps and not self.stopped:
+                                self.condition.wait()
             self.report["status"] = "stopped" if self.stopped else "completed"
         except Exception as error:
             self.error = str(error)
@@ -272,14 +310,18 @@ def make_handler(session):
         def do_GET(self):
             parsed = urlsplit(self.path)
             try:
-                if parsed.path in {"/", "/app.js", "/style.css"}:
+                if parsed.path in {"/", "/app.js", "/style.css", "/map.js"}:
                     name, mime = {"/": ("index.html", "text/html"), "/app.js": ("app.js", "text/javascript"),
-                                  "/style.css": ("style.css", "text/css")}[parsed.path]
+                                  "/style.css": ("style.css", "text/css"), "/map.js": ("map.js", "text/javascript")}[parsed.path]
                     self.send((STATIC / name).read_bytes(), mime + "; charset=utf-8")
                 elif parsed.path == "/api/meta":
                     self.send(session.metadata())
                 elif parsed.path == "/api/state":
                     self.send(session.state())
+                elif parsed.path == "/api/map":
+                    self.send(session.brain_map())
+                elif parsed.path == "/api/map-activity":
+                    self.send(session.map_activity(int(parse_qs(parsed.query)["sequence"][0])))
                 elif parsed.path == "/api/neuron":
                     query = parse_qs(parsed.query)
                     self.send(session.inspect(query["id"][0], int(query["sequence"][0]) if "sequence" in query else None))
@@ -294,17 +336,23 @@ def make_handler(session):
             if origin and origin != expected:
                 self.send({"error": "Use the local dashboard origin"}, status=403)
                 return
-            if self.path != "/api/control" or self.headers.get("Content-Type") != "application/json":
+            if self.path not in {"/api/control", "/api/feedback"} or self.headers.get("Content-Type") != "application/json":
                 self.send({"error": "Unknown route or content type"}, status=400)
                 return
             try:
                 size = int(self.headers.get("Content-Length", "0"))
                 if not 0 < size <= 128:
                     raise ValueError("Invalid request size")
-                session.control(json.loads(self.rfile.read(size))["command"])
-                self.send({"ok": True})
+                body = json.loads(self.rfile.read(size))
+                if self.path == "/api/feedback":
+                    self.send(session.save_feedback(body["sequence"], body["action"]))
+                else:
+                    session.control(body["command"])
+                    self.send({"ok": True})
             except (ValueError, KeyError, TypeError) as error:
                 self.send({"error": str(error)}, status=400)
+            except OSError:
+                self.send({"error": "Could not save the correction; check available disk space and retry"}, status=500)
 
         def log_message(self, format, *args):
             pass
@@ -325,6 +373,10 @@ def main():
     parser.add_argument("--port", type=int, default=8766)
     parser.add_argument("--no-browser", action="store_true")
     parser.add_argument("--autoplay", action="store_true")
+    parser.add_argument("--feedback-split", choices=("train", "validation"), default="train",
+                        help="Assign this entire session's human corrections to one data split")
+    parser.add_argument("--teach", action="store_true",
+                        help="Pause after every decision, including episode boundaries, for human review")
     parser.add_argument("--exit-on-complete", action="store_true", help="Close the server after a bounded automated check")
     args = parser.parse_args()
     if not 1 <= args.port <= 65535:
@@ -337,7 +389,8 @@ def main():
         catalog = ConnectionCatalog.from_directory(ids, controller, model, args.data_dir)
         output = args.output or Path("runs") / datetime.now().strftime("live-brain-%Y%m%d-%H%M%S-%f")
         session = LiveSession(catalog, output, report, episodes=args.episodes, seed=args.seed,
-                              max_decisions=args.max_decisions, autoplay=args.autoplay, seeds=args.seeds)
+                              max_decisions=args.max_decisions, autoplay=args.autoplay, seeds=args.seeds,
+                              feedback_split=args.feedback_split, teach=args.teach)
         server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(session))
     except (ValueError, OSError) as error:
         parser.error(str(error))

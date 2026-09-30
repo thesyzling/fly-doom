@@ -24,7 +24,15 @@ On this prepared machine, open the interactive live dashboard:
 .\.venv\Scripts\python.exe -m flydoom.live_brain
 ```
 
-The browser opens at `http://127.0.0.1:8766`, paused for inspection. Click **Step once** for one neural decision or **Run** for autonomous play. The same page shows the observed Doom frame, fly neuron activity, directed connections, and the 64 trained cells. Click a neuron or action to inspect its actual model weights. See the [live screen guide](docs/LIVE_VIEW.md) for controls, timing, and interpretation.
+The browser opens at `http://127.0.0.1:8766`, paused for inspection. Click **Step once** for one neural decision or **Run** for autonomous play. The central map shows all 139,255 anatomical neuron anchors beside the 64 trained engineered cells and action outputs, with the Doom observation and a connection inspector alongside. Drag to rotate, Shift-drag to pan, scroll to zoom, and click a node to inspect actual model weights. These points are anatomical references, not complete neuron shapes; the added cells have a schematic layout. See the [live screen guide](docs/LIVE_VIEW.md) for controls, timing, and interpretation.
+
+To include the experimental candidate's 17 action-memory inputs in the same map:
+
+```powershell
+.\.venv\Scripts\python.exe -m flydoom.live_brain --checkpoint runs/fly-student-memory-v1 --port 8767
+```
+
+The live screen also supports **Teach this decision**: pause, label the pictured decision, and save or revise your correction. Playing and labeling leave the active weights unchanged. A separate `flydoom.feedback_training` command trains a candidate from training/validation collections while replaying earlier demonstrations. Follow the [human correction workflow](docs/LIVE_VIEW.md#teach-a-decision-then-train-a-separate-candidate) before collecting labels or training.
 
 For the standalone Doom window with terminal telemetry:
 

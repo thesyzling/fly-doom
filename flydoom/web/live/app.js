@@ -3,6 +3,8 @@ const $ = id => document.getElementById(id);
 const element = (tag, text, cls) => { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; };
 let meta, state, selected, inspected, requestNumber = 0, lastSequence = -1;
 let zoom = 1, pan = {x: 0, y: 0}, hitNodes = [], dragging;
+let brainMap;
+let feedbackSequence = -1, feedbackLabel, feedbackPending = false;
 const colors = {fly: "#6c9eae", input: "#74e2c0", descending: "#f2cb79", student: "#c2a4ff", action: "#f0f3f5", previous: "#899aa3", memory: "#e5ad79"};
 const shorten = id => id.length > 17 ? id.slice(0, 6) + "…" + id.slice(-5) : id;
 const number = n => Number(n).toLocaleString("en-US");
@@ -18,9 +20,76 @@ async function control(command) {
   catch (e) { error(e.message); }
 }
 for (const command of ["run", "pause", "step", "stop"]) $(command).onclick = () => control(command);
+const workbench = document.querySelector(".workbench");
+function setGameWidth(width) {
+  const bounded = Math.max(300, Math.min(640, Number(width) || 480));
+  $("gameWidth").value = bounded;
+  workbench.style.setProperty("--game-width", `${bounded}px`);
+}
+try { setGameWidth(localStorage.getItem("flydoom.gameWidth")); }
+catch { setGameWidth(480); }
+$("gameWidth").oninput = () => {
+  setGameWidth($("gameWidth").value);
+  try { localStorage.setItem("flydoom.gameWidth", $("gameWidth").value); }
+  catch { /* Panel resizing still works when browser storage is unavailable. */ }
+};
+function focusGame(focused) {
+  workbench.classList.toggle("game-focus", focused);
+  $("focusGame").textContent = focused ? "Back to brain map" : "Focus game";
+  $("focusGame").setAttribute("aria-pressed", String(focused));
+}
+$("focusGame").onclick = () => focusGame(!workbench.classList.contains("game-focus"));
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape" && workbench.classList.contains("game-focus")) {
+    focusGame(false);
+    $("focusGame").focus();
+  }
+});
 $("search").onsubmit = event => { event.preventDefault(); choose($("rootId").value.trim()); };
-$("resetView").onclick = () => { zoom = 1; pan = {x: 0, y: 0}; drawGraph(); };
+$("resetView").onclick = () => { zoom = 1; pan = {x: 0, y: 0}; brainMap?.reset(); drawGraph(); };
+for (const [button, atlas] of [["atlasView", true], ["localView", false]]) $(button).onclick = () => {
+  $("atlasWrap").hidden = !atlas; $("localWrap").hidden = atlas;
+  $("atlasView").setAttribute("aria-pressed", String(atlas)); $("localView").setAttribute("aria-pressed", String(!atlas));
+  brainMap?.draw(); drawGraph();
+};
 function choose(id) { selected = id; zoom = 1; pan = {x: 0, y: 0}; inspect(); highlight(); }
+function renderFeedback(next) {
+  const feedback = next?.feedback;
+  if (feedbackSequence !== next?.sequence || feedbackLabel !== feedback?.label) {
+    feedbackSequence = next?.sequence;
+    feedbackLabel = feedback?.label;
+    $("feedbackAction").value = feedback?.label || "";
+  }
+  const ready = feedback && next.decision > 0 && !next.busy &&
+    (next.paused || ["completed", "stopped"].includes(next.phase));
+  $("feedbackAction").disabled = !ready || feedbackPending;
+  $("saveFeedback").disabled = !ready || feedbackPending || !$("feedbackAction").value;
+  $("clearFeedback").disabled = !ready || feedbackPending || !feedback?.label;
+  const canAdvance = meta?.teaching && !["completed", "stopped", "error"].includes(next?.phase);
+  $("saveFeedback").textContent = canAdvance ? "Save & next decision" : "Save correction";
+  $("feedbackStatus").textContent = !feedback ? "Start a new live session to collect corrections." :
+    `${feedback.count} saved · ${feedback.split} collection. ` +
+    (feedbackPending ? "Saving…" : !next.decision ? "Step once to review a decision." : !ready ? "Pause to label this frame." :
+    feedback.label ? `Decision ${next.decision}: ${feedback.label.replaceAll("_", " ")}. You can revise or remove this label.` :
+    `Decision ${next.decision} has no label yet. Weights remain unchanged during play.`);
+}
+async function saveFeedback(action, advance = false) {
+  if (feedbackPending || !state?.sequence) return;
+  const sequence = state.sequence;
+  feedbackPending = true;
+  renderFeedback(state);
+  try {
+    await api("/api/feedback", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({sequence, action})});
+    error("");
+    render(await api("/api/state"));
+    if (advance && !["completed", "stopped", "error"].includes(state.phase)) await control("step");
+  } catch (e) { error(e.message); }
+  finally { feedbackPending = false; renderFeedback(state); }
+}
+$("feedbackAction").onchange = () => renderFeedback(state);
+$("saveFeedback").onclick = () => saveFeedback($("feedbackAction").value, meta?.teaching);
+$("clearFeedback").onclick = () => saveFeedback(null);
 function highlight() {
   document.querySelectorAll("[data-node]").forEach(e => e.classList.toggle("selected", e.dataset.node === selected));
 }
@@ -31,8 +100,9 @@ async function inspect() {
     const result = await api(`/api/neuron?id=${encodeURIComponent(selected)}&sequence=${state.sequence}`);
     if (token !== requestNumber) return;
     inspected = result;
+    brainMap?.inspect(result);
     $("neuronTitle").textContent = result.label;
-    $("connectionNote").textContent = result.connection_note;
+    $("connectionNote").textContent = "Only selected strongest weights are drawn. Arrows point from source to target. The table distinguishes feature channels and weight units.";
     $("explanation").textContent = result.explanation;
     const fields = [["ID", result.id]];
     for (const [key, label, suffix] of [["super_class", "Cell superclass", ""], ["transmitter", "Transmitter annotation", ""],
@@ -68,14 +138,16 @@ function neuronList(id, neurons) {
 }
 function render(next) {
   state = next;
+  renderFeedback(next);
   const ended = ["completed", "stopped", "error"].includes(next.phase);
   $("status").textContent = ended ? `Run ${next.phase} · inspection available` : next.busy ? (next.paused ? "Finishing decision · then paused" : "Computing neural response…") : next.paused ? "Paused · ready to inspect" : "Running";
-  $("run").disabled = ended || !next.paused; $("pause").disabled = ended || next.paused;
+  $("run").disabled = ended || (meta?.teaching ? next.busy : !next.paused); $("pause").disabled = ended || next.paused;
   $("step").disabled = ended || next.busy; $("stop").disabled = ended;
   if (next.error) error(next.error);
   $("results").replaceChildren(...next.finished_episodes.map((e, i) => element("p", `Episode ${i + 1}: ${e.kills} target kills · return ${e.return} · ${e.end_reason.replaceAll("_", " ")}`)));
   if (!next.sequence || next.sequence === lastSequence) return;
   lastSequence = next.sequence;
+  brainMap?.update(next).catch(e => error(e.message));
   if (next.memory) document.querySelectorAll(".memory-input").forEach((button, i) => { button.lastChild.textContent = next.memory[i].toFixed(3); });
   $("doom").src = next.frame;
   $("episode").textContent = `EP ${next.episode}/${meta.episodes} · DECISION ${next.decision}`;
@@ -177,9 +249,16 @@ async function poll() {
 async function start() {
   try {
     meta = await api("/api/meta");
+    $("run").textContent = meta.teaching ? "Next decision" : "Run";
+    $("step").hidden = Boolean(meta.teaching);
+    if (meta.teaching) {
+      document.querySelector(".feedback-section .hint").textContent = "Teaching mode pauses after each decision. Choose the correct action, then Save & next decision. Use Next decision to skip an uncertain frame. Saving collects examples; training happens separately.";
+    }
     $("graphSize").textContent = `${number(meta.neurons)} cells · ${number(meta.connections)} edges`;
     $("readoutSize").textContent = `${meta.outputs} outputs → ${meta.hidden} added cells`;
     $("outputPath").textContent = `Reports: ${meta.output}`;
+    try { brainMap = new IntegratedMap(choose); await brainMap.load(meta); }
+    catch(e) { $("mapLoading").textContent = e.message; error(e.message); }
     $("memoryPanel").hidden = !meta.memory_features?.length;
     for (const name of meta.memory_features || []) {
       const button = element("button", undefined, "neuron-row memory-input");
