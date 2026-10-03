@@ -365,3 +365,182 @@ Added `--teach` to keep each decision, including a finished episode's final obse
 The focused observer, feedback, and memory suites passed **22 tests**, including two new checks for guided stepping, episode-boundary labeling, and repeated-click queue suppression. Edge verified one-step behavior and the Save & next continuation; the save request was intercepted with a synthetic success response so this browser check did not manufacture operator labels. Persisted labeling and its immutability are covered by the HTTP and session tests. Browser evidence is in `runs/teaching-mode-browser-check.json` and `runs/teaching-mode-desktop.png`.
 
 The new plan scanned 25 opening images, selecting eleven distinct frames absent from the checked earlier human/student training and validation recordings. It did not inspect human test frames or gameplay outcomes. Training starts are 60011, 60013, 60014; validation starts are 60015, 60017; later matched gameplay starts are 60020, 60022, 60023, 60025, 60030, 60034. The full checksums and source manifests are in `runs/human-feedback-plan-v2/report.json`. This establishes opening-image uniqueness relative to the checked sources only, not independent tasks or non-overlapping later trajectories. The prepared training and validation sessions are paused for actual operator collection. Real feedback training is still pending labels.
+
+
+## First real human-feedback training and paired gameplay (October 3, 2026)
+
+The operator saved 35 training labels across starts 60011 and 60013, and 17 validation labels across 60015 and 60017. The training labels are 32 MOVE_RIGHT and 3 ATTACK; validation contains 9 MOVE_RIGHT, 5 MOVE_LEFT, and 3 ATTACK. Training labels disagree with 23 recorded actions, and validation labels disagree with 7. These are explicit operator judgments, not verified optimal actions.
+
+Byte-preserving snapshots in `runs/human-feedback-frozen-v1` freeze the two v3 collections. Their checksums, source paths, parent hash, reserved evaluation starts, and the pre-evaluation training settings are recorded in `snapshot.json`. The 50-epoch run used learning rate 0.00001 and seed 41. Selection retained epoch 9 as `runs/fly-student-human-feedback-v1`. No gameplay outcome selected an epoch or changed these settings.
+
+All 17 feedback validation inputs remain after exact-duplicate checks. The earlier human validation split loses 54 exact training-input duplicates, leaving 127 examples. Feedback validation accuracy stays 10/17 (58.82%) and balanced accuracy stays 48.89%; balanced NLL changes from 1.422208 to 1.419719. Earlier validation accuracy changes from 78/127 (61.42%) to 75/127 (59.06%); balanced accuracy changes from 41.54% to 40.63%. This fits the existing five-percentage-point retention constraint but is not a meaningful demonstrated accuracy improvement.
+
+The actual input, recurrent, and action-readout parameters changed. Parent normalization, parent checkpoint bytes, original fly weights, and the hash-locked runtime implementations were unchanged. The Laya teacher was not loaded for this training or gameplay; its recorded rejection remains unchanged. Tests in this iteration were actual checkpoint loading, training/provenance audits, complete native-engine trajectories, and browser checks for the review artifact; no simulator or policy-runtime source was changed.
+
+Both checkpoints then played all six pre-reserved starts with four game tics per decision and a 75-decision bound. The candidate was already selected before either evaluation. Opening-image uniqueness had been checked against specified older training/validation frames, not human test frames; this remains a small basic-scenario development comparison.
+
+| Model | Target kills / 6 | Mean return | Longest WAIT streak |
+|---|---:|---:|---:|
+| Memory parent | 2/6 | -220.50 | 23 |
+| Human-feedback candidate | 0/6 | -328.33 | 31 |
+
+| Start | Parent return / kills | Candidate return / kills |
+|---|---:|---:|
+| 60020 | -325 / 0 | -345 / 0 |
+| 60022 | 39 / 1 | -335 / 0 |
+| 60023 | -310 / 0 | -310 / 0 |
+| 60025 | -325 / 0 | -320 / 0 |
+| 60030 | -57 / 1 | -315 / 0 |
+| 60034 | -345 / 0 | -345 / 0 |
+
+Under the predefined rule (target kills first, mean return for ties), the paired winner is **parent**. The default checkpoint was not changed. This pilot does not establish a general gameplay or biological-topology advantage.
+
+For example, on start 60022 the first action difference is decision 15: the parent chooses ATTACK (29.09%, versus 27.87% RIGHT), while the candidate chooses RIGHT (29.35%, versus 28.67% ATTACK). The parent kills the target on decision 16; the candidate eventually times out. The comparison report verifies matching graph spike totals through the first action difference. This illustrates a trajectory divergence from a small policy change; it does not isolate a biological circuit as the cause.
+
+`runs/human-feedback-comparison-v1/report.json` audits checkpoint hashes, plan/split separation, episode order, trace length, actions against probabilities, action totals, episode returns, parameter differences, normalization, and first action divergences. Raw reports and traces are in `human-feedback-parent-eval-v1` and `human-feedback-candidate-eval-v1`. The candidate and the paired gameplay results are retained separately.
+
+`runs/human-feedback-review-v1/index.html` is a standalone local interactive review of all 52 frozen labeled frames. It displays the operator label, recorded action, and the parent/candidate probabilities on identical stored inputs. Parent probabilities match the recording within 1e-7 absolute / 1e-6 relative tolerance. On training inputs, label agreement changes from 12/35 to 13/35 (one action changes); on validation inputs it stays 10/17 with no changed actions. Edge checked the collection filter, previous/next buttons, slider boundaries, actual image loading, probability summary, and mobile overflow, with no uncaught exceptions. This is fixed-observation inspection, not another autonomous game.
+
+## Laya Vision integration and research workbench (October 3, 2026)
+
+Loaded the actual 201,161,347-parameter `thaitea/laya-vision` checkpoint at revision `f2fe3c12cb6d04c59d8a190250bf3fb40fc828dc` using fork commit `9e1e2419d855ad3e1a2af4d4bd1ef6be5418842c`. The isolated worker ran FP32 inference on the local RTX 3060 Laptop GPU, with Hub networking disabled after the verified download. Pillow 12.3.0 and torchvision 0.29.1+cu130 were added; the original installed text-Laya package was retained. Student, action-memory, original checkpoint and simulator hash contracts remained intact.
+
+Three native-engine conditions used seeds 72000, 72001 and 72002, the same basic scenario and bundled Freedoom2 assets, four tics per action, and at most 75 decisions per episode. Both branches were measured in every condition. The only control difference was the fixed probability-mixing coefficient. These are development starts; exact opening separation from earlier training was not established.
+
+| Control | Vision coefficient | Target kills | Mean return | Total decisions |
+|---|---:|---:|---:|---:|
+| Vision | 1.0 | 3/3 | 83.00 | 15 |
+| Vision + existing student | 0.8 | 3/3 | 83.00 | 15 |
+| Existing student | 0.0 | 2/3 | -111.00 | 126 |
+
+Vision and the mixture both produced per-seed returns 87, 79 and 83, in 4, 6 and 5 decisions. Their applied actions matched in these runs. The student produced returns 35, -38 and -330 in 17, 34 and 75 decisions. This checks the integration and illustrates the visual teacher's value in this small sample. It does not demonstrate that the fly graph improves the Vision model or that the student has learned from it. No policy or connectome training occurred.
+
+`runs/vision-integration-validation-v1/report.json` audits all 156 decisions: saved PNG against the worker's RGB hash, NPZ checksum, exact fusion and argmax action, previous applied action and all 17 causal memory inputs, Vision logits/temperature against probabilities, and scorer products plus residual and bias against raw logits. Re-evaluating the unchanged student on every saved feature vector gave **zero maximum absolute probability difference**. The source traces and images are under `runs/vision-workbench-v1`.
+
+The new frontend at `flydoom/web/research` replaces the default documented workflow with a notebook-style research instrument. Existing map and checkpoint primitives are reused. The legacy observer remains available separately. All **132 tests passed**, including new checks for mixture extremes and invalid distributions, paired observation/action semantics, immutable student parameters, causal applied-action history, input-drive reconstruction, stop during in-flight Vision inference, repeated step suppression, source hash/path validation, and same-origin/new-run request constraints.
+
+Actual headless Edge checks covered 1600-pixel desktop and 390-pixel mobile widths, large game-image rendering, four action rows, sixteen Vision scorer rows, historical image and map alignment, weight inspection, and a real pointer selection of an engineered cell in the WebGL atlas. The game frame measured 787 pixels wide on desktop and 356 on mobile. There was no page-level horizontal overflow, uncaught JavaScript exception, or WebGL error.
+
+A separate browser lifecycle check ended the initial paused run, created a new run from the form, stepped twice, ran and paused at decision three, verified that it remained paused, inspected a previous observation, ended the run, then created a fresh run and left it paused at decision one. For the inspected cell, observed input drive was 1.2491939068 and the independently reconstructed sum plus bias was 1.2491938472. The full 576-element final Vision scorer vector was exposed. Evidence: `runs/research-browser-check.json`, `runs/research-controls-check.json`, and the desktop, circuit, weights and mobile PNGs in `runs/`.
+
+The active prepared session is under `runs/vision-workbench-v2`; it is an inspection run, not part of the comparison table. The upstream model emits a pad-token configuration warning; observed single-frame predictions passed the numerical checks above. Broader scenario validity, Vision distillation, biological interpretation and a topology advantage remain unestablished. See [the developer architecture and API guide](VISION_WORKBENCH.md).
+
+## Decision playback and engine outcomes (October 3, 2026)
+
+The user's completed inspection run `runs/vision-workbench-v2/run-20261003-031825-391309` contains four decisions: two MOVE_LEFT and two ATTACK, one target kill, and return 87. The old observation panel displayed the image before the final action, which did not convey the terminal result. The scenario itself only exposes strafing and shooting.
+
+Reconstructed all 15 applied decisions from the three-episode hybrid run `runs/vision-workbench-v1/run-20261003-030435-554880` in the native engine. Every decision's RGB hash before action and cumulative return afterward matched the original trace; stored observation checksums and teacher/student probabilities were also checked. The resulting `runs/replays/vision-hybrid-15/replay.json` indexes 66 game frames, six ATTACK decisions, and three engine-confirmed kills. This replays recorded actions, not another neural inference experiment. No terminal image is fabricated: the engine ends immediately on a kill, so the player holds the last available frame and displays an explicit outcome label.
+
+All **136 tests passed** after adding replay capture and API support. New checks cover reconstruction mismatch rejection, native frame persistence without changes to actions or student parameters, frame checksum tampering, path escape, frame bounds and HTTP bytes. Existing simulator/checkpoint hash contracts still pass.
+
+Actual Edge playback checks verified 15 selectable cards, frame progression, pause stability, previous/next controls, slider selection, hit/end labeling, automatic stop on the final decision, and isolation from the live engine. The recorded image measured 841 pixels wide at a 1600-pixel viewport. Both desktop and 390-pixel mobile layouts had no page overflow. No uncaught JavaScript or WebGL errors occurred. Evidence: `runs/replay-browser-check.json`, `runs/replay-desktop.png`, and `runs/replay-mobile.png`.
+
+A fresh paired run at seed 72020 (`runs/vision-workbench-v3/run-20261003-034150-947673`) completed in four decisions, with two LEFT and two ATTACK actions, return 87, and one kill. The last action advanced two tics and had reward delta 99. The browser then refreshed the replay library and loaded all four newly captured decisions. The workbench was left in a new paused run at seed 72000 under `runs/vision-workbench-v3/run-20261003-034327-355208`. These are UI/capture checks, not a new training or generalization result.
+
+## First offline Laya Vision distillation (October 3, 2026)
+
+The experiment plan `runs/vision-distillation-v1/plan.json` reserved collection and evaluation seeds before new recordings began. Existing mixed/student trajectories and six new teacher-controlled episodes supplied training; six other teacher-controlled episodes supplied validation. All 12 new teacher episodes hit the target. After deduplicating within each split and removing four validation rows that repeated a training RGB image or exact student input, 147 training rows and 26 validation rows remained. Labels were the pinned Vision model's complete action distribution; no human target, engine reward, kill count or future action entered the student's inputs.
+
+The separate candidate `runs/fly-student-vision-v1` continues the existing 64-cell memory student with 100 epochs of KL distillation, AdamW learning rate 0.0001 and batches of 32. Epoch 100 had the lowest validation KL; epoch zero was an eligible fallback. Parent mean/scale buffers were identical afterward. Input, recurrent and output weights/biases changed (172,548 scalar entries); the original checkpoint and frozen biological graph remained intact. Candidate SHA256: `434f2d4b8b1b90768f7cf16f85578cc789453459871b03c7c3d63f7b626bd4e2`.
+
+| Saved-observation metric | Parent | Vision-trained candidate |
+|---|---:|---:|
+| Training teacher agreement | 14.97% | 97.28% |
+| Validation teacher agreement | 50.00% | 61.54% |
+| Validation KL | 1.14097 | 0.69757 |
+| Validation ATTACK agreement | 0/7 | 4/7 |
+
+These are teacher imitation measurements, not game win rates. The large train/validation gap limits the inference. The gameplay comparison below was run only after checkpoint selection, with **no Vision model instantiated or executed**. Both students used the same native scenario, frozen connectome, causal applied-action history and maximum of 75 decisions. The comparison criterion was fixed in advance: target kills first, mean return for ties, parent retained on exact ties.
+
+| Seed | Parent decisions / return / kills | Candidate decisions / return / kills |
+|---|---|---|
+| 73040 | 22 / 15 / 1 | 17 / 23 / 1 |
+| 73041 | 10 / 63 / 1 | 6 / 79 / 1 |
+| 73042 | 17 / 35 / 1 | 5 / 83 / 1 |
+| 73043 | 12 / 55 / 1 | 8 / 71 / 1 |
+| 73044 | 17 / 35 / 1 | 5 / 83 / 1 |
+| 73045 | 75 / -325 / 0 | 8 / 71 / 1 |
+
+The candidate wins this pilot: **6/6 kills and mean return 68.33**, versus **5/6 and -20.33** for the parent. Total decisions drop from 153 to 49, with WAIT actions falling from 107 to 6. Seeds 73042 and 73044 have the same opening RGB as a training observation (and each other). Excluding these two leaves 4/4 kills for the candidate and 3/4 for the parent, but does not establish independence from all earlier training, broad gameplay generalization, or a causal advantage of the biological topology. Evaluation seeds must not be recycled as an untouched test set after inspecting these results.
+
+Evidence is in `runs/vision-distillation-eval-v1/report.json`, `run-parent`, `run-candidate`, and `audit.json`. The audit independently recomputes each saved decision through its fixed checkpoint, checks the previous action and all 17 memory inputs, NPZ hashes, action argmax, episode totals and replay frame hashes. The source plan and selected model are unchanged by gameplay evaluation. The default command still selects the original memory parent; the prepared workbench explicitly loads the new candidate with `alpha=0`.
+
+All **146 tests passed**, including new checks for normalization preservation and actual parameter learning, train/validation input or RGB overlap, reserved-seed collisions, altered RGB/NPZ artifacts, mismatched Vision identity, causal memory, and teacher-free native evaluation. Real Edge tests confirmed the two-row training metrics panel, 49-decision/6-kill candidate replay, absent Vision predictions in that replay, final hit indication, no desktop/mobile overflow, and no JavaScript/WebGL errors. A live single step at alpha zero applied the candidate's WAIT proposal even though the observer Vision proposed LEFT, verifying that the student actually controlled the action. Evidence: `runs/distillation-browser-check.json`, `runs/distillation-replay-check.json`, and their PNGs. The server remains open under `runs/vision-student-workbench-v1`, paused after that one decision.
+
+
+## Synchronized archive signal inspector (October 3, 2026)
+
+The replay now pairs its game view with an interactive signal inspector using the same archived decision. The separate native-observation panel remains removed. `replay_signals.py` locates the recording's exact checkpoint by SHA256, verifies the original trace and NPZ/image hashes, reproduces student activity and probabilities from recorded features, and exposes input/output contribution arithmetic. No missing whole-brain history or Vision inference is fabricated. The 49-decision candidate archive verified locally in 1.46 seconds (excluding interpreter startup).
+
+All 18 targeted replay, signal-inspector and research tests passed. Nine new tests cover input/output reconstruction and rejection of modified weights, NPZ, trace, frame, spike activity, decision identity, probability distributions and source paths. Real Edge checks exercised cell selection, input inspection, mixture changes, direct-output removal, reset, play/pause, decision seeking and switching from a hybrid recording to the student-only candidate. The game remained visible beside the inspector while scrolling. Signal details matched the selected episode/decision; the live engine sequence remained unchanged. Measured input-drive reconstruction error was 2.61e-8 and output-logit reconstruction error was 1.28e-7 for the inspected example. Desktop (1600 px) and mobile (390 px) had no page overflow or uncaught browser errors.
+
+Evidence: `runs/signals-browser-check.json`, `runs/signals-desktop.png`, and `runs/signals-inspector.png`. The workbench is running the trained candidate, paused at its opening, under `runs/vision-signal-workbench-v1`. The local sandbox changes only arithmetic previews; it does not establish causal biological effects or alter a policy, replay, or live game.
+
+## Side-by-side game and connectome observatory (October 3, 2026)
+
+The research interface now uses one game/map workspace with explicit archive and live modes. Recorded decisions drive both panels from the same index. The archive map highlights all retained descending voltage features and the exact student's reconstructed spike activity; missing whole-brain history remains explicitly unavailable. Active-cell rows rank absolute contributions to the inspected action and show each cell's strongest positive output contribution. Selecting a cell exposes input products, output weights and signed logit contributions. The default recording matches the loaded student checkpoint when a student-only archive exists.
+
+All **18 targeted tests passed** across replay, replay signals and research modules. Added assertions verify that descending voltages, rates, previous actions and root IDs match the saved feature vector. Edge checks confirmed the 49-decision trained archive, aligned game/map panels, selected-cell links, numerical input inspection, map picking, seeking, play/pause, live single-step, and archive/live source isolation during pending requests. Archived playback did not advance the live engine. Switching to the older hybrid recording loaded its own checkpoint values. The completed interaction check reported no JavaScript or WebGL errors.
+
+Additional layout checks at 1600, 1440 and 390 pixels confirmed that the game image fits its viewport without covering the footer, the desktop panels align, and the page has no horizontal overflow. Evidence: `runs/observatory-check.json`, `runs/observatory-layout-check.json`, `runs/observatory-desktop.png`, `runs/observatory-laptop.png`, and `runs/observatory-mobile.png`. The prepared server uses the trained candidate at alpha zero under `runs/vision-observatory-v1`; its live session remains paused. These checks validate interface behavior, not additional training or biological causality.
+
+## Locked 20-start Vision student validation (October 3, 2026)
+
+`flydoom.vision_validation` fixed 20 seeds before gameplay, excluding 160 previously declared or recorded seed values found in local experiment metadata. The plan locks 48 artifacts, including both checkpoint files/reports, both retained distillation splits, calibration, Python source and game assets. Plan: `runs/vision-validation-plan-v1/plan.json`; SHA256: `5eff50dd46aa55f67821dd80f5169b3c192468be3438bd12a73e1377e8854c34`. All locked artifacts passed verification before and after execution. No Vision model or optimizer ran, and no default checkpoint was changed.
+
+All three conditions completed the same 20 native-game starts, with at most 75 decisions each. The disconnected condition disables synaptic propagation while preserving visual input drive, student weights and causal action memory.
+
+| Condition | Target hits | Mean return | Decisions | WAIT / ATTACK decisions |
+|---|---:|---:|---:|---:|
+| Memory parent | 15/20 | -60.40 | 662 | 450 / 44 |
+| Vision-distilled candidate | 19/20 | 33.70 | 278 | 24 / 110 |
+| Same candidate, disconnected graph | 0/20 | -300.00 | 1500 | 0 / 0 |
+
+The disconnected policy chose RIGHT on all 1500 decisions. Its descending voltage/rate inputs were exactly zero; input cells may still spike because their external drive remains enabled. This demonstrates the fixed candidate's dependence on graph-derived signals under this intervention. It does not establish a biological-topology advantage over a retrained conventional or rewired network, and the intervention changes the student's input distribution.
+
+The 20 seeds produced only **eight distinct opening RGB images**. Thirteen starts repeat the same image found in Vision training; none match retained Vision validation images. All 20 remain in the primary results. Across complete trajectories, parent/candidate/disconnected RGB overlaps with training were 221/65/13 decisions, and exact student-input overlaps were 221/52/0. No trajectory matched the retained validation RGB or input vectors. These checks do not establish independence from the parent's earlier human/text-teacher training.
+
+| Opening group | Starts | Parent decisions / return | Candidate decisions / return |
+|---|---:|---|---|
+| Training-matched image | 13 | 17 / 35 each | 5 / 83 each |
+| Seed 5349712 | 1 | 45 / -82 | 16 / 39 |
+| Seed 3587243 | 1 | 75 / -325, no hit | 75 / -390, no hit |
+| Seed 6129789 | 1 | 21 / 14 | 5 / 83 |
+| Seed 8872304 | 1 | 75 / -330, no hit | 23 / -4 |
+| Seed 7480885 | 1 | 75 / -315, no hit | 14 / 36 |
+| Seed 6152622 | 1 | 75 / -315, no hit | 54 / -163 |
+| Seed 6845968 | 1 | 75 / -310, no hit | 26 / -6 |
+
+A post-hoc descriptive breakdown of the seven openings unmatched to either retained Vision split gives **2/7 parent hits, 6/7 candidate hits, and 0/7 disconnected hits**, with mean returns -237.57, -57.86 and -300.00. This subgroup does not replace the primary analysis. The candidate's remaining failed start uses 53 ATTACK decisions, compared with 7 for its parent; reduced waiting can become repeated ineffective shooting. Another candidate success takes 54 decisions and 26 attacks. These recovery failures justify broader visual teaching data before moving to harder gameplay.
+
+The planned paired bootstrap resampled exact-opening groups 10,000 times with RNG seed 401. Candidate minus parent: hit-rate difference +20 percentage points, descriptive 95% interval +4.55 to +87.50 points; return difference +94.10, interval +53.18 to +249.25. Connected minus disconnected candidate: hit-rate difference +95 points, interval +62.50 to +100; return difference +333.70, interval +159.25 to +374.53. The wide intervals reflect eight opening groups and strongly uneven repetition. They describe this fixed checkpoint and scenario, not variation across training seeds or broad game generalization.
+
+All **41 targeted tests passed**, covering protocol/hash changes, invalid seed bounds, paired episode alignment, grouped statistics, RGB/input overlap, replay integrity and connected/disconnected recording labels. An independent audit reproduced all **2440 decisions** with maximum probability error zero, checked exact spike activity and causal memory/previous-action features, reconciled episode outcomes, and verified **12073 frame hashes**. Edge loaded all three archives, verified their neural data, and exercised active-cell input/output inspection without browser exceptions. Evidence: `runs/vision-validation-v1/report.json`, `audit.json`, `browser-check.json`, and the three `run-*` recordings. The browser workbench remains available under `runs/vision-observatory-v1`; recording refresh exposes the new runs.
+
+M3 remains incomplete: this is one training seed, eight opening images and a fixed-policy disconnection control. Independent training repetitions, more diverse held-out scenes and retrained matched network/topology controls remain necessary. These 20 seeds are now inspected development evidence and must not be recycled as an untouched future test set.
+
+## Map label spacing and narrow-screen layout (October 3, 2026)
+
+At 1366 by 768, the previous map compressed the student grid, action-memory label and previous-action label into overlapping vertical bands. The research map now positions layers from their actual grid bounds with reserved label gaps. The shared renderer exposes a label hook; the legacy observer retains its original label positions. Map height no longer collapses with a short viewport. Panel headings, controls and metadata wrap, and the workspace stacks below 1000 pixels. Probability cards use two columns on narrow screens; inspection tables retain local horizontal scrolling.
+
+Real Edge checks at widths 1600, 1366, 1093, 900, 768 and 390 verified separation between each layer and its label, space above the map footer, no page overflow, and working selected-cell inspection. The 1093-pixel viewport also exercises the effective width of a 1366-pixel display at approximately 125% zoom. No browser exceptions occurred. Evidence: `runs/layout-fix-check.json`, `runs/layout-before.png`, and `runs/layout-fixed-*.png`. These changes affect layout only, not policy weights or recorded decisions.
+
+## Diverse recovery teaching, three continuation seeds (October 3, 2026)
+
+The local plan `runs/vision-recovery-v1/plan.json` was fixed before collection, with SHA256 `117456524f090bce6be4414fb6b795aae3fb7e779eee17a87451da70abad9fa6`. An outcome-free scan of 86 opening frames found 38 distinct images outside 151 known images from the preceding Vision teaching splits and gameplay openings. The first 12 eligible openings became training, the next 6 validation, and the remaining 20 a reserved gameplay set. Selection used only seed and exact RGB hash. This is exact opening separation, not guaranteed independence from the parent's older history or all subsequent trajectories.
+
+The existing Vision student controlled all collection actions at alpha zero while the pinned Vision model labeled the same observations. Each episode was bounded at 24 decisions, so collection kills are not comparable with the earlier 75-decision evaluation. The 12 training episodes yielded 220 decisions; the 6 validation episodes yielded 111. All actual opening hashes matched the locked scan. One validation row was removed for exact training RGB/input overlap, retaining 110 validation samples. No reserved evaluation opening appears in any of the 331 collected RGB observations.
+
+Each continuation started from the same intact `runs/fly-student-vision-v1` weights and normalization. Seeds 101, 202 and 303 independently randomized minibatch ordering for 100 epochs at learning rate 0.0001. Selection used the lowest validation KL within each repetition, including epoch zero. These are three stochastic continuation runs, not three independent network initializations. All three results are retained without cross-seed gameplay selection.
+
+| Repetition | Selected epoch | Initial validation KL | Final validation KL | Initial teacher agreement | Final teacher agreement |
+|---|---:|---:|---:|---:|---:|
+| 101 | 88 | 0.97396 | 0.51190 | 28.18% | 61.82% |
+| 202 | 97 | 0.97396 | 0.51266 | 28.18% | 60.91% |
+| 303 | 100 | 0.97396 | 0.50526 | 28.18% | 59.09% |
+
+Training teacher agreement reached 96.82% in every repetition, leaving a substantial training/validation gap. On retained validation examples, ATTACK agreement changed from 43.48% to 47.83%, 52.17% and 47.83%, respectively. Better imitation is not yet evidence of improved recovery during autonomous gameplay. Training on new data alone can forget older behavior, and the teacher's own accuracy on these recovery states has not been independently established.
+
+Each candidate changed 172548 scalar parameter entries in the engineered readout; parent mean/scale buffers were exactly preserved. The biological weights and visual teacher remain fixed. Checkpoints: `runs/fly-student-recovery-v1-seed-101`, `-202`, and `-303`. The independent audit rebuilt the verified datasets, reproduced all selected validation metrics, checked epoch selection and normalization, and confirmed three distinct checkpoint hashes. It also checked the reserved-opening overlap against all collected frames. Evidence: `runs/vision-recovery-v1/report.json`, `audit.json`, `opening-scan.json`, both `run-*` recordings and each candidate's report.
+
+All **24 targeted recovery, distillation and research tests passed**, including eight new recovery tests for history exclusion, duplicate scene/seed separation, insufficient scene diversity, protocol/artifact mutation and actual collected-opening identity. The running workbench API verified neural signals for both collection archives (220 and 111 decisions). No new candidate gameplay evaluation or checkpoint promotion occurred; the browser's active checkpoint remains the earlier tested Vision student. The next step is a locked paired gameplay comparison of all three continuations and their common parent on the 20 reserved openings, with trajectory-overlap reporting before drawing generalization conclusions.

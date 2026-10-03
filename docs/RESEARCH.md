@@ -47,7 +47,7 @@ flowchart LR
     H[Training reward] -. parameter update .-> F
 ```
 
-This diagram is a training design. The experimental LIF kernel now also runs inside a bounded pixel-to-game bridge with a fixed, artificial readout. The trainable readout and reward update shown here have not been implemented. See [the bridge assumptions and controls](BRIDGE.md).
+This diagram is the original training design. The experimental LIF kernel now runs inside a bounded pixel-to-game bridge, and a trainable engineered readout has been implemented, including offline Laya Vision distillation. The reward-driven parameter update shown here remains unimplemented; current teaching uses recorded target probabilities. See [the bridge assumptions and controls](BRIDGE.md) and [the Vision training procedure](VISION_WORKBENCH.md#offline-teaching-first-vision-student).
 
 1. Start with a fixed graph and a small trainable readout. Inputs come only from images, and the output policy has no direct access to those images. This is a learned controller on top of a fixed connectivity model.
 2. Then train the magnitudes of existing edges. The graph mask remains fixed, with no new connections. Record signs, weight bounds, and deviations from biological initialization. Choose between PPO/BPTT and local plasticity after initial performance measurements.
@@ -83,3 +83,19 @@ September 27 follow-up: an experimental LIF kernel and four bounded whole-graph 
 Long training runs will not begin before passing M2. If a subcircuit is needed instead of the whole brain, its scope will be recorded explicitly and will not be described as whole-brain simulation. Training time estimates will follow the first benchmark.
 
 September 27 integration follow-up: a bounded engineering bridge now feeds coarse screen brightness directly into positive visual projection cells and maps descending spike rates to game buttons. This deliberately bypasses the unresolved retinal pathway, uses artificial assignments, and does not constitute passage of M2 or evidence of learning. Disconnected and zero-input controls are included; physiological calibration remains outstanding.
+
+## Scope review after the first Vision teaching pilot (October 3, 2026)
+
+The engineering prototype now meets the immediate goal: real connectivity drives an added trainable student, Laya Vision supplies offline teaching targets, the trained student plays the basic shooting scenario without executing Vision, and recordings plus decision/weight inspection are available. The larger research roadmap remains incomplete.
+
+| Milestone | Current status | Remaining work |
+|---|---|---|
+| M0–M1 | Completed for the selected dataset and initial setup | Revisit sources only when changing the scope or dataset |
+| M2 | Calibrated engineering bridge runs; biological validation remains incomplete | Resolve the retinal pathway and physiological assumptions; the brightness-bin bridge is an artificial bypass |
+| M3 | Fixed-graph training, Vision distillation, locked 20-start evaluation and three recovery continuation seeds completed | Evaluate all continuations on the 20 newly reserved distinct openings; compare retrained matched network/topology controls. Continuations share one warm-start parent, and full trajectory independence remains to be audited |
+| M4 | Not started | Train magnitudes of existing biological edges under explicit sign/mask/bound constraints if pursuing this later research stage |
+| M5 | Interactive game recordings and numerical inspection available | Orientation, navigation, survival and harder maps; current success is limited to `basic` |
+
+The first candidate scored 6/6 target kills against the parent's 5/6 on a small development comparison. Two evaluation openings repeat training images. The subsequent locked evaluation measured 19/20 candidate hits, 15/20 parent hits and 0/20 for the disconnected candidate, but 13 starts repeat a single training opening. The seven remaining openings give 6/7 versus 2/7 hits as a descriptive subgroup. See the [full protocol, uncertainty and scene-overlap audit](VALIDATION.md#locked-20-start-vision-student-validation-october-3-2026). These findings support fixed-policy circuit dependence and better performance in this scenario, not a biological-topology advantage or broad generalization.
+
+The recovery teaching stage now uses 12 distinct training openings and 6 validation openings, with 20 further distinct openings reserved. Three continuation seeds improved teacher imitation on the new validation data; they share the same warm-start model and have not yet undergone the reserved gameplay comparison. The next M3 step is to compare all three and their common parent on those 20 starts, without choosing a preferred seed from gameplay outcomes. The older inspected evaluation seeds are no longer untouched test data. M4 is a separate extension rather than a prerequisite for the current fixed-graph prototype. Automatic online learning is not implemented and is not required by the completed offline-teaching pilot.

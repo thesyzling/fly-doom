@@ -8,6 +8,7 @@ dependencies = ["numpy>=2,<3", "scipy>=1.14,<2", "pyarrow>=18", "vizdoom>=1.2.4,
 [project.optional-dependencies]
 dev = ["pytest>=8"]
 training = ["laya==0.3.21", "torch>=2.0", "safetensors>=0.4", "pygame-ce>=2.5"]
+vision = ["laya==0.3.21", "torch>=2.0", "safetensors>=0.4", "pillow>=12", "torchvision>=0.29", "pygame-ce>=2.5"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

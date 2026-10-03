@@ -290,7 +290,7 @@ class LiveSession:
                     on_finished()
 
 
-def make_handler(session):
+def make_handler(session, static=STATIC):
     class Handler(BaseHTTPRequestHandler):
         def send(self, body, mime="application/json", status=200):
             if not isinstance(body, bytes):
@@ -313,7 +313,8 @@ def make_handler(session):
                 if parsed.path in {"/", "/app.js", "/style.css", "/map.js"}:
                     name, mime = {"/": ("index.html", "text/html"), "/app.js": ("app.js", "text/javascript"),
                                   "/style.css": ("style.css", "text/css"), "/map.js": ("map.js", "text/javascript")}[parsed.path]
-                    self.send((STATIC / name).read_bytes(), mime + "; charset=utf-8")
+                    directory = STATIC if name == "map.js" else static
+                    self.send((directory / name).read_bytes(), mime + "; charset=utf-8")
                 elif parsed.path == "/api/meta":
                     self.send(session.metadata())
                 elif parsed.path == "/api/state":

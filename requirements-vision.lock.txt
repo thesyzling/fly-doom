@@ -1,0 +1,7 @@
+# Additive Windows / Python 3.13 dependencies for the pinned Vision worker.
+# Install requirements-training.lock.txt first. The original Laya package stays installed.
+# Fork commit: 9e1e2419d855ad3e1a2af4d4bd1ef6be5418842c
+# Model revision: f2fe3c12cb6d04c59d8a190250bf3fb40fc828dc
+--extra-index-url https://download.pytorch.org/whl/cu130
+pillow==12.3.0
+torchvision==0.29.1+cu130

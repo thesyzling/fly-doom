@@ -2,9 +2,17 @@
 
 A research project to train a model based on the real fruit fly connectome to control Doom.
 
-**Status: an experimental 64-cell spiking student has been trained using Laya and frozen fly-network outputs.** Student play runs the real 139,255-neuron connection graph and does not load Laya. The teacher still fails its offline acceptance gate; this explicit transfer experiment preserves that rejection. Original fly connections remain fixed, and successful general gameplay is not established. Natural visual transmission and physiological calibration remain unresolved. Start with the [learning guide](docs/LEARNING.md); see also the [bridge guide](docs/BRIDGE.md), [research plan](docs/RESEARCH.md), and [simulation assumptions](docs/SIMULATION.md).
+**Status: Laya Vision is integrated with the frozen fly graph and existing 64-cell student in a research workbench.** In live paired runs, the visual model and student evaluate the same Doom frame; an explicit probability mixture selects the action. The interface places Doom beside the anatomical map, with synchronized playback, active-cell contributions, selected-connection inspection and checkpoint exports. A separate student candidate has completed offline Vision distillation and a small teacher-free gameplay comparison. Start with the [Vision architecture and developer guide](docs/VISION_WORKBENCH.md). Original fly connections remain fixed; general gameplay or biological validity is not established.
+
+Earlier text-Laya experiments remain available in the [learning guide](docs/LEARNING.md). That teacher's failed acceptance gate is preserved; it does not describe the newly integrated Vision checkpoint. See also the [bridge guide](docs/BRIDGE.md), [research plan](docs/RESEARCH.md), and [simulation assumptions](docs/SIMULATION.md).
+
+**First Vision teaching pilot completed:** `runs/fly-student-vision-v1` is a separate student distilled from 147 recorded Vision targets, with 26 retained validation examples. In a six-start native-game comparison without running Vision, it killed 6/6 targets versus the parent's 5/6, using 49 rather than 153 decisions. Two evaluation openings repeat training images; this is a small development result. The biological weights stay frozen, and the original default checkpoint is preserved. [Training procedure, commands and replay instructions](docs/VISION_WORKBENCH.md#offline-teaching-first-vision-student) and [full validation evidence](docs/VALIDATION.md#first-offline-laya-vision-distillation-october-3-2026) distinguish teacher imitation from autonomous gameplay.
 
 Current tools include data preparation, annotation matching, an experimental neural simulator, stimulation diagnostics, recorded activity playback, a random Doom baseline, a bounded neural game controller, human demonstration recording, local Laya adaptation, and training of an additional spiking neuron group.
+
+**Larger locked evaluation completed:** on 20 shared starts, the Vision student achieved 19 target hits versus the parent's 15; the same student with graph transmission disabled achieved zero. Mean returns were 33.70, -60.40 and -300.00. The starts contain only eight distinct opening images, and 13 repeat one training opening. Among the seven unmatched openings, the candidate hit 6 targets versus the parent's 2. This supports a fixed-policy improvement and graph-signal dependence within `basic`, not broad generalization or a topology advantage. [Protocol and replay commands](docs/VISION_WORKBENCH.md#locked-gameplay-validation-and-graph-dependence-control) and [full evidence](docs/VALIDATION.md#locked-20-start-vision-student-validation-october-3-2026) include the remaining recovery failure and uncertainty.
+
+**Recovery teaching completed:** three continuation seeds trained from the tested Vision student on 220 new student-trajectory examples, with 110 retained validation examples. On this harder validation set, teacher agreement rose from 28.18% to 61.82%, 60.91% and 59.09%. All candidates remain separate from the active checkpoint; gameplay on 20 newly reserved distinct openings is pending. [Collection, repetition commands and interpretation](docs/VISION_WORKBENCH.md#diverse-recovery-collection-and-three-teaching-repetitions) explain what was trained and what remains untested.
 
 A later balanced-readout training experiment shortened long WAIT streaks but did not improve gameplay: both old and new students killed two targets in six new starts. The original student remains the default. The [learning guide](docs/LEARNING.md#refine-the-existing-readout-with-balanced-human-actions) explains the refinement command and the retained experimental candidate; [validation results](docs/VALIDATION.md) include paired teacher, timing, random, and disconnected controls.
 
@@ -16,9 +24,23 @@ The [action memory and recovery guide](docs/ACTION_MEMORY.md) covers the latest 
 
 In the new six-opening comparison, the action-memory candidate improves from two to three target kills versus correction-v2, with mean return -153.17 versus -200.17. The longest WAIT streak remains 33 decisions and direct Laya achieves five kills. This is a limited development result; the original remains the default. The separate candidate is `runs/fly-student-memory-v1`.
 
+A first human-feedback continuation trained from 35 explicit labels and selected a checkpoint using 17 separate validation labels. The new candidate scored 0/6 target kills versus 2/6 for its memory parent on the six reserved starts; mean returns were -328.33 and -220.50, respectively. The default remains unchanged. The local review `runs/human-feedback-review-v1/index.html` shows all recorded labels and both models' probabilities; [validation results](docs/VALIDATION.md) retain the full comparison.
+
+The [target-side diagnostic](docs/TARGET_DIAGNOSIS.md) compares color image bins, the actual brightness input, and frozen fly outputs on separate episodes. Its local inspector shows each recorded game frame beside the 8 by 8 input grid and diagnostic predictions. This measures available visual information without retraining the game policy.
+
 ## Start here
 
-On this prepared machine, open the interactive live dashboard:
+On this prepared machine, start the Laya Vision research workbench:
+
+```powershell
+.\.venv\Scripts\python.exe -m flydoom.research
+```
+
+Open **http://127.0.0.1:8770**. The observatory places Doom and the connectome/readout map side by side. **Recorded runs** and **Live experiment** switch the source of both panels together. The active-cell table shows signed action-logit contributions; select a cell in the map or table to open its weight/input inspector. [Architecture, API contracts and artifact formats](docs/VISION_WORKBENCH.md) are documented for development.
+
+Use **Play run**, pause, arrows or the decision strip to inspect a recording. With the trained candidate loaded, its 49-decision student-only evaluation opens by default. Archived highlights use saved descending features and student spikes, while live mode shows full current biological spike counts. A source change never advances the game. Live controls provide **Single step**, **Run**, **Pause**, **End run** and **New run settings**. The earlier separate native-observation panel and long signal dashboard have been replaced by this shared workspace.
+
+For the earlier student-only observer:
 
 ```powershell
 .\.venv\Scripts\python.exe -m flydoom.live_brain

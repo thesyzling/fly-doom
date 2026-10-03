@@ -1,5 +1,7 @@
 # Live brain and trained-network map
 
+For the current Laya Vision integration and redesigned research interface, use `python -m flydoom.research` and the [Vision workbench developer guide](VISION_WORKBENCH.md). This page documents the retained student-only observer and its earlier human-labeling workflow.
+
 The default view places all **139,255 fly neuron reference points** beside the **64 trained engineered cells**, their action outputs, and any action-memory inputs. The interface uses a large central map, an adjustable Doom observation panel, and a cell inspector. It runs locally with WebGL and Canvas; no new package is required.
 
 The game panel now starts at 480 pixels wide on larger desktops, subject to available space. Use **Game panel width** to adjust it; the preference is saved in this browser. **Focus game** temporarily gives the game the workspace while keeping Run, Pause, and Step once available. Click **Back to brain map** or press Escape to restore the map and current selection. On narrow screens, the full-width game appears above the map. These controls resize the same observation image without changing the model input or advancing the game.
@@ -44,7 +46,7 @@ Playing alone does not update weights. **Teach this decision** records your desi
 
 Only a paused, finished, or stopped observation can be labeled. A busy simulation or a stale decision number is rejected. The saved features are copied from the exact student forward pass, including the actual past-action memory. Each immutable NPZ contains those inputs, the original probabilities, and the displayed PNG. `feedback/manifest.json` records the desired label, applied action, seed, decision, split, model provenance, checksums, and revision history. The recording is local and does not query Laya. Labels are operator judgments, not independently verified optimal actions.
 
-The current prepared session uses `runs/human-feedback-train-v2` and distinct-opening starts 60011, 60013, and 60014. Validation uses `runs/human-feedback-validation-v2` on 60015 and 60017. The plan is saved in `runs/human-feedback-plan-v2/report.json`.
+The current prepared session uses `runs/human-feedback-train-v3` and distinct-opening starts 60011, 60013, and 60014. Validation uses `runs/human-feedback-validation-v3` on 60015 and 60017. The plan is saved in `runs/human-feedback-plan-v2/report.json`.
 
 Use **teaching mode** (`--teach`) to pause after every decision, including episode boundaries. **Next decision** skips forward without a label; **Save & next decision** saves the selected correction and advances one decision. On the final observation it becomes **Save correction**. Repeated clicks during computation cannot queue past the next review point. Teaching mode also overrides `--autoplay`, so a collection cannot accidentally start running unattended. For subsequent collections, choose a new output directory each time:
 
@@ -58,7 +60,7 @@ Collect validation labels in separate episodes, using the same checkpoint. These
 .\.venv\Scripts\python.exe -m flydoom.live_brain --checkpoint runs/fly-student-memory-v1 --seeds 60015 60017 --teach --feedback-split validation --port 8793 --output runs/my-feedback-validation
 ```
 
-After collecting labels in both sessions, train into a new directory. Substitute the actual collection paths; the current prepared paths are `runs/human-feedback-train-v2/feedback` and `runs/human-feedback-validation-v2/feedback`:
+After collecting labels in both sessions, train into a new directory. Substitute the actual collection paths; the current prepared paths are `runs/human-feedback-train-v3/feedback` and `runs/human-feedback-validation-v3/feedback`:
 
 ```powershell
 .\.venv\Scripts\python.exe -m flydoom.feedback_training --collections runs/my-feedback-train/feedback runs/my-feedback-validation/feedback --checkpoint runs/fly-student-memory-v1 --output runs/my-feedback-student
@@ -76,6 +78,10 @@ Evaluate the resulting candidate and its parent in separate output directories o
 ```
 
 Compare target kills, returns, and waiting before choosing which checkpoint to play. No automatic promotion is implemented. All commands should be run from the project directory; labels persist when the browser or server closes. The training command needs at least one active example in each split and remaining non-duplicate validation inputs, but passing this technical minimum is not evidence of sufficient training data.
+
+## Completed human-feedback pilot
+
+The first real continuation is saved as `runs/fly-student-human-feedback-v1`. Its 35 training and 17 validation examples are frozen under `runs/human-feedback-frozen-v1`. Review the original frames, your labels, and both checkpoint probabilities by opening `runs/human-feedback-review-v1/index.html`. This review is a local file and remains usable after the game servers close. The full paired gameplay results are in [VALIDATION.md](VALIDATION.md); no default switch was made. Further collection should use more varied movement and firing states, rather than assuming more epochs on this small set will improve play.
 
 ## Reading the connections and activity
 

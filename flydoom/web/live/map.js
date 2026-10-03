@@ -93,11 +93,7 @@ class IntegratedMap {
     const ctx=this.overlay.getContext("2d");ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,this.w,this.h);this.layout();
     if(document.getElementById("showLinks").checked)for(const edge of this.data.edges)this.line(ctx,edge);
     if(document.getElementById("showSelected").checked&&this.inspected && this.snapshot && this.inspected.sequence===this.snapshot.sequence)for(const edge of this.inspected.edges)this.line(ctx,edge,true);
-    ctx.font="11px Segoe UI";ctx.fillStyle="#47596a";ctx.textAlign="center";
-    ctx.fillText("Fly brain",this.w*.30,34);ctx.font="9px Segoe UI";ctx.fillText(`${this.data.ids.length.toLocaleString()} anatomical anchors`,this.w*.30,49);
-    const first=this.nodes.get("student:0");ctx.font="11px Segoe UI";ctx.fillText(`${this.meta.hidden} trained cells`,this.w*.70,Math.max(34,first.y-32));ctx.font="9px Segoe UI";ctx.fillText("Schematic arrangement",this.w*.70,Math.max(48,first.y-18));
-    if(this.meta.memory_features.length)ctx.fillText(`Action memory · ${this.meta.memory_features.length} inputs`,this.w*.70,this.h*.68-18);
-    ctx.fillText("Previous action",this.w*.70,this.h*.83-18);
+    this.drawLabels(ctx);
     for(const [id,node] of this.nodes){const chosen=id===this.selected;let activity=0;if(node.kind==="student")activity=(this.snapshot?.student_spikes[node.index]||0)/8;if(node.kind==="memory")activity=this.snapshot?.memory?.[node.index]||0;
       ctx.fillStyle=node.kind==="student"?`rgba(55,101,158,${.22+.78*activity})`:node.kind==="memory"?`rgba(124,132,56,${.25+.75*activity})`:"#fff";ctx.strokeStyle=chosen?"#a86024":"#91a1ae";ctx.lineWidth=chosen?2:1;
       ctx.beginPath();ctx.arc(node.x,node.y,node.r,0,Math.PI*2);ctx.fill();ctx.stroke();
@@ -106,6 +102,13 @@ class IntegratedMap {
     if(this.selected&&this.lookup.has(this.selected)){const p=this.point(this.selected);ctx.strokeStyle="#a86024";ctx.lineWidth=2;ctx.beginPath();ctx.arc(p.x,p.y,6,0,Math.PI*2);ctx.stroke()}
     // Show real endpoints of selected local edges, even when their layer is filtered out.
     if(this.inspected && this.snapshot && this.inspected.sequence===this.snapshot.sequence&&document.getElementById("showSelected").checked){ctx.fillStyle="#a56e40";for(const e of this.inspected.edges)for(const node of [e.source,e.target])if(this.lookup.has(node.id)){const p=this.point(node.id);ctx.beginPath();ctx.arc(p.x,p.y,2.4,0,Math.PI*2);ctx.fill()}}
+  }
+  drawLabels(ctx) {
+    ctx.font="11px Segoe UI";ctx.fillStyle="#47596a";ctx.textAlign="center";
+    ctx.fillText("Fly brain",this.w*.30,34);ctx.font="9px Segoe UI";ctx.fillText(`${this.data.ids.length.toLocaleString()} anatomical anchors`,this.w*.30,49);
+    const first=this.nodes.get("student:0");ctx.font="11px Segoe UI";ctx.fillText(`${this.meta.hidden} trained cells`,this.w*.70,Math.max(34,first.y-32));ctx.font="9px Segoe UI";ctx.fillText("Schematic arrangement",this.w*.70,Math.max(48,first.y-18));
+    if(this.meta.memory_features.length)ctx.fillText(`Action memory · ${this.meta.memory_features.length} inputs`,this.w*.70,this.h*.68-18);
+    ctx.fillText("Previous action",this.w*.70,this.h*.83-18);
   }
   pick(x,y) {
     let best=null,distance=64;for(const [id,p] of this.nodes){const d=(p.x-x)**2+(p.y-y)**2;if(d<Math.max(64,p.r*p.r*2)&&d<distance){best=id;distance=d}}
