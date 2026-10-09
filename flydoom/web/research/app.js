@@ -12,8 +12,28 @@ function weightsNow(){return view.mode==='archive'?view.signals?.readout_weight:
 function positiveChoice(activity,weights,i){const values=weights.map(w=>w[i]*activity);return Math.max(...values)>0?argmax(values):null}
 
 class ObservatoryMap extends IntegratedMap {
+  events(){
+    super.events();let rotating=false;
+    this.overlay.addEventListener('pointerdown',event=>{rotating=!event.shiftKey});
+    this.overlay.addEventListener('pointermove',event=>{if(rotating&&event.buttons)$('brainView').value='3d'});
+    for(const name of ['pointerup','pointercancel'])this.overlay.addEventListener(name,()=>{rotating=false});
+  }
+  geometry(){
+    const key=`${this.yaw}:${this.pitch}`;
+    if(this.boundsKey!==key){
+      const cy=Math.cos(this.yaw),sy=Math.sin(this.yaw),cp=Math.cos(this.pitch),sp=Math.sin(this.pitch);
+      let left=Infinity,right=-Infinity,top=Infinity,bottom=-Infinity;
+      for(let i=0;i<this.positions.length;i+=3){const x=cy*this.positions[i]+sy*this.positions[i+2],z=-sy*this.positions[i]+cy*this.positions[i+2],y=cp*this.positions[i+1]-sp*z,depth=sp*this.positions[i+1]+cp*z,f=3/(3+depth);left=Math.min(left,x*f);right=Math.max(right,x*f);top=Math.min(top,y*f);bottom=Math.max(bottom,y*f)}
+      this.projectedBounds={left,right,top,bottom};this.boundsKey=key;
+    }
+    const b=this.projectedBounds,area={left:18,right:this.brainFocus?this.w-18:this.w*.50-18,top:66,bottom:this.h-34};
+    const scale=.92*Math.min((area.right-area.left)/(b.right-b.left),(area.bottom-area.top)/(b.bottom-b.top))*this.zoom;
+    return {x:(area.left+area.right)/2-(b.left+b.right)/2*scale+this.pan.x,y:(area.top+area.bottom)/2-(b.top+b.bottom)/2*scale+this.pan.y,s:scale};
+  }
+  focusBrain(enabled){this.brainFocus=enabled;this.anatomyOpacity=enabled?.30:.25;this.filter=0;$('mapFilter').value='0';this.zoom=1;this.pan={x:0,y:0};$('focusBrain').textContent=enabled?'Show circuit':'Enlarge brain';$('focusBrain').setAttribute('aria-pressed',String(enabled));this.draw()}
+  reset(){this.yaw=0;this.pitch=-.2;this.zoom=1;this.pan={x:0,y:0};$('brainView').value='3d';this.filter=0;$('mapFilter').value='0';this.draw()}
   layout(){
-    this.nodes.clear();const step=Math.min(19,Math.max(10,this.w*.025)),x=this.w*.66,top=78;
+    this.nodes.clear();if(this.brainFocus)return;const step=Math.min(19,Math.max(10,this.w*.025)),x=this.w*.66,top=78;
     const bottom=top+7*step,memoryTop=bottom+53,previousTop=memoryTop+step+54;
     this.labelPositions={x,memory:memoryTop-20,previous:previousTop-20};
     for(let i=0;i<this.meta.hidden;i++)this.nodes.set(`student:${i}`,{x:x+(i%8-3.5)*step,y:top+Math.floor(i/8)*step,kind:'student',index:i,r:Math.max(3.5,step*.27)});
@@ -21,6 +41,7 @@ class ObservatoryMap extends IntegratedMap {
     this.meta.actions.forEach((name,i)=>{this.nodes.set(`action:${name}`,{x:this.w-32,y:86+i*66,kind:'action',index:i,r:8});this.nodes.set(`previous:${name}`,{x:x+(i-1.5)*step,y:previousTop,kind:'previous',index:i,r:3.5})});
   }
   drawLabels(ctx){
+    if(this.brainFocus){ctx.fillStyle='#47596a';ctx.textAlign='center';ctx.font='13px Segoe UI';ctx.fillText('Fly brain / complete anchor cloud',this.w/2,30);ctx.font='10px Segoe UI';ctx.fillText(`${this.data.ids.length.toLocaleString()} neuron positions / click to inspect`,this.w/2,48);return}
     const {x,memory,previous}=this.labelPositions;
     ctx.fillStyle='#47596a';ctx.textAlign='center';ctx.font='12px Segoe UI';
     ctx.fillText('Fly brain',this.w*.26,30);ctx.fillText(`${this.meta.hidden} trained cells`,x,30);
@@ -28,7 +49,7 @@ class ObservatoryMap extends IntegratedMap {
     if(this.meta.memory_features.length)ctx.fillText('Action memory',x,memory);
     ctx.fillText('Previous action',x,previous);
   }
-  async load(meta){await super.load(meta);this.liveMeta=meta;this.liveEdges=this.data.edges;this.mode='empty'}
+  async load(meta){this.anatomyOpacity=.25;await super.load(meta);this.liveMeta=meta;this.liveEdges=this.data.edges;this.mode='empty'}
   upload(){const gl=this.gl;gl.bindBuffer(gl.ARRAY_BUFFER,this.countBuffer);gl.bufferData(gl.ARRAY_BUFFER,this.counts,gl.DYNAMIC_DRAW)}
   clearRecord(){if(!this.data)return;this.mode='empty';this.snapshot=null;this.inspected=null;this.selected=null;this.counts.fill(0);this.data.edges=[];this.upload();this.draw();$('mapNote').textContent='Loading the recording’s own neural data…'}
   archived(row,signals,data){
@@ -94,7 +115,7 @@ async function loadRecord(id){pause();const token=++view.request;view.runId=id;v
   }catch(e){if(token===view.request){error(e.message);$('mapNote').textContent='Neural data unavailable; no activity is inferred.'}}
 }
 async function refresh(){try{const list=await api('/api/replays'),previous=$('runSelect').value;const preferred=list.find(r=>r.checkpoint_sha256===view.meta.checkpoint_sha256&&r.student_only);$('runSelect').replaceChildren(...list.map(r=>{const option=el('option',r.title);option.value=r.id;return option}));if(!list.length){$('runSummary').textContent='Complete a live run to create a recording.';return}$('runSelect').value=list.some(r=>r.id===previous)?previous:preferred?.id||list[0].id;await loadRecord($('runSelect').value)}catch(e){error(e.message)}}
-function select(id){pause();view.selected=id;if(id.startsWith('action:'))view.action=ACTIONS.indexOf(id.split(':')[1]);paintDecision()}
+function select(id){pause();if(view.map.brainFocus&&!view.map.lookup.has(id))view.map.focusBrain(false);view.selected=id;if(id.startsWith('action:'))view.action=ACTIONS.indexOf(id.split(':')[1]);paintDecision()}
 function tableRow(values){const row=el('tr');for(const value of values)row.append(el('td',value));return row}
 async function inspect(){const row=rowNow(),key=view.selected;if(!row||!key)return;const token=++view.inspectRequest;$('inspector').hidden=false;$('inspectorTitle').textContent=key;$('inputRows').replaceChildren();$('outputRows').replaceChildren();$('inspectorNote').textContent='';
   if(view.mode==='archive'){
@@ -125,6 +146,8 @@ async function poll(){try{const old=view.latest;view.latest=await api('/api/stat
 for(const [id,command] of [['runLive','run'],['pauseLive','pause'],['stepLive','step'],['stopLive','stop']])$(id).onclick=async()=>{try{await api('/api/control',{command});error('')}catch(e){error(e.message)}};
 $('newRun').onclick=async()=>{try{await api('/api/new-run',{seed:Number($('seed').value),episodes:Number($('episodes').value),max_decisions:Number($('limit').value),alpha:Number($('alpha').value)});view.latest=null;view.map.activitySequence=-1;view.map.inspected=null;view.selected=null;$('inspector').hidden=true;await metadata();$('runSettings').open=false;error('')}catch(e){error(e.message)}};
 $('archiveMode').onclick=()=>mode('archive');$('liveMode').onclick=()=>mode('live');$('resetView').onclick=()=>view.map?.reset();$('refreshRuns').onclick=refresh;$('runSelect').onchange=()=>loadRecord($('runSelect').value);
+$('focusBrain').onclick=()=>view.map?.focusBrain(!view.map.brainFocus);
+$('brainView').onchange=()=>{if(!view.map)return;const rotations={'3d':[0,-.2],xy:[0,0],xz:[0,Math.PI/2],yz:[Math.PI/2,0]};[view.map.yaw,view.map.pitch]=rotations[$('brainView').value];view.map.zoom=1;view.map.pan={x:0,y:0};view.map.draw()};
 $('previous').onclick=()=>{pause();seek(view.index-1)};$('next').onclick=()=>{pause();seek(view.index+1)};$('seek').oninput=()=>{pause();seek(Number($('seek').value))};
 $('play').onclick=()=>{if(view.playing){pause();return}if(!view.record||!view.signals)return;if(view.index===view.record.decisions.length-1&&view.tic===rowNow().frames.length-1)seek(0);view.playing=true;$('play').textContent='Ⅱ Pause';schedule()};
 $('closeInspector').onclick=()=>{view.selected=null;view.inspectRequest++;$('inspector').hidden=true;view.map.inspected=null;view.map.selected=null;paintDecision();view.map.draw()};

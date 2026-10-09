@@ -24,7 +24,7 @@ class IntegratedMap {
     const gl=this.gl;const shader=(type,source)=>{const s=gl.createShader(type);gl.shaderSource(s,source);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s};
     this.program=gl.createProgram();gl.attachShader(this.program,shader(gl.VERTEX_SHADER,`
       attribute vec3 pos; attribute float role; attribute float count;
-      uniform vec2 viewport; uniform vec2 center; uniform float scale; uniform float yaw; uniform float pitch; uniform float ratio; uniform float filter;
+      uniform vec2 viewport; uniform vec2 center; uniform float scale; uniform float yaw; uniform float pitch; uniform float ratio; uniform float filter; uniform float anatomyOpacity;
       varying vec4 color;
       void main(){
         float x=cos(yaw)*pos.x+sin(yaw)*pos.z;
@@ -33,7 +33,7 @@ class IntegratedMap {
         float depth=sin(pitch)*pos.y+cos(pitch)*z;
         vec2 pixel=center+vec2(x,y)*scale*3.0/(3.0+depth);
         gl_Position=vec4(pixel.x/viewport.x*2.0-1.0,1.0-pixel.y/viewport.y*2.0,0.0,1.0);
-        color=vec4(.36,.43,.49,.12);gl_PointSize=1.3*ratio;
+        color=vec4(.36,.43,.49,anatomyOpacity);gl_PointSize=1.3*ratio;
         if(role>.5&&role<1.5)color=vec4(.15,.49,.46,.28);
         if(role>1.5)color=vec4(.76,.46,.20,.5);
         if(count>0.0){float a=min(1.0,log(1.0+count)/log(9.0));color=vec4(.81,.37,.13,.45+.5*a);gl_PointSize=(1.8+1.6*a)*ratio;}
@@ -88,7 +88,7 @@ class IntegratedMap {
     for(const [name,size,offset] of [["pos",3,0],["role",1,12]]){const p=gl.getAttribLocation(this.program,name);gl.enableVertexAttribArray(p);gl.vertexAttribPointer(p,size,gl.FLOAT,false,16,offset)}
     gl.bindBuffer(gl.ARRAY_BUFFER,this.countBuffer);const p=gl.getAttribLocation(this.program,"count");gl.enableVertexAttribArray(p);gl.vertexAttribPointer(p,1,gl.FLOAT,false,4,0);
     const u=name=>gl.getUniformLocation(this.program,name);gl.uniform2f(u("viewport"),this.w,this.h);gl.uniform2f(u("center"),g.x,g.y);
-    for(const [name,v] of [["scale",g.s],["yaw",this.yaw],["pitch",this.pitch],["ratio",dpr],["filter",this.filter]])gl.uniform1f(u(name),v);
+    for(const [name,v] of [["scale",g.s],["yaw",this.yaw],["pitch",this.pitch],["ratio",dpr],["filter",this.filter],["anatomyOpacity",this.anatomyOpacity??.12]])gl.uniform1f(u(name),v);
     gl.drawArrays(gl.POINTS,0,this.data.ids.length);
     const ctx=this.overlay.getContext("2d");ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,this.w,this.h);this.layout();
     if(document.getElementById("showLinks").checked)for(const edge of this.data.edges)this.line(ctx,edge);
