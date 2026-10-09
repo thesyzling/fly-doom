@@ -6,6 +6,10 @@
 @media(max-width:760px){.game-screen{height:auto;aspect-ratio:4/3}}
 
 /* Reserve space for labels instead of compressing the neural layers. */
+.brain-panel.is-expanded{display:flex;flex-direction:column;background:var(--paper);width:100vw;height:100vh}.brain-panel.is-expanded .atlas-wrap{flex:1;min-height:0;height:auto}.brain-panel.is-expanded .brain-footer{flex:none}
+.model-panel{background:var(--paper);border:1px solid var(--line);padding:14px 16px;margin-bottom:16px;border-radius:5px}
+.model-controls{display:flex;align-items:center;flex-wrap:wrap;gap:10px 16px}.model-controls select{flex:1 1 240px;max-width:480px}.model-controls #modelStatus{font:11px/1.6 Consolas,monospace;overflow-wrap:anywhere}
+.model-panel details{margin-top:14px;border-top:1px solid var(--line);padding-top:10px}.model-panel summary{cursor:pointer}.model-panel summary span{margin-left:12px}.model-panel table{width:100%;min-width:590px}.model-panel .note{margin-bottom:0}.model-panel tr.loaded{background:#e5eee6}
 .game-panel{display:flex;flex-direction:column}
 .game-screen{flex:1;min-height:340px}
 .atlas-wrap{min-height:405px}
@@ -31,3 +35,5 @@ th{white-space:normal;line-height:1.5}
 @media(max-width:1200px){.analysis-row{grid-template-columns:1fr}.action-choices strong{font-size:26px}.specification{gap:12px}.brand span{display:none}}
 @media(max-width:1000px){.workspace{grid-template-columns:1fr}.game-screen{flex:none;aspect-ratio:4/3;height:auto;min-height:0;max-height:520px}.atlas-wrap{height:420px;flex:none}.masthead{flex-wrap:wrap;gap:16px}.specification{flex-wrap:wrap}.inspector-columns{grid-template-columns:1fr}.game-footer{margin-top:auto}}
 @media(max-width:760px){.atlas-wrap{height:380px;min-height:380px}.runbar select{flex-basis:200px}.panel-heading .source-tag{font-size:9px}.technical-grid{gap:24px}.action-choices{grid-template-columns:repeat(2,minmax(0,1fr))}.action-choices strong{font-size:26px}.activity-panel table{min-width:360px}.transport{row-gap:12px}dl{grid-template-columns:1fr}dd{margin-bottom:8px}}
+
+.brain-panel.is-expanded{position:fixed;inset:0;z-index:1000;margin:0;border-radius:0}

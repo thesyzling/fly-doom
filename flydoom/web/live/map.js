@@ -83,7 +83,7 @@ class IntegratedMap {
     const rect=this.overlay.getBoundingClientRect();if(!rect.width||!rect.height||!this.data)return;
     this.w=rect.width;this.h=rect.height;const dpr=window.devicePixelRatio||1;
     for(const c of [this.canvas,this.overlay]){if(c.width!==Math.round(this.w*dpr)||c.height!==Math.round(this.h*dpr)){c.width=Math.round(this.w*dpr);c.height=Math.round(this.h*dpr)}}
-    const gl=this.gl,g=this.geometry();gl.viewport(0,0,this.canvas.width,this.canvas.height);gl.clearColor(246/255,247/255,249/255,1);gl.clear(gl.COLOR_BUFFER_BIT);gl.useProgram(this.program);
+    const gl=this.gl,g=this.geometry();gl.viewport(0,0,this.canvas.width,this.canvas.height);gl.clearColor(246/255,247/255,249/255,1);gl.clear(gl.COLOR_BUFFER_BIT);this.drawAnatomyGL?.();gl.useProgram(this.program);
     gl.bindBuffer(gl.ARRAY_BUFFER,this.staticBuffer);
     for(const [name,size,offset] of [["pos",3,0],["role",1,12]]){const p=gl.getAttribLocation(this.program,name);gl.enableVertexAttribArray(p);gl.vertexAttribPointer(p,size,gl.FLOAT,false,16,offset)}
     gl.bindBuffer(gl.ARRAY_BUFFER,this.countBuffer);const p=gl.getAttribLocation(this.program,"count");gl.enableVertexAttribArray(p);gl.vertexAttribPointer(p,1,gl.FLOAT,false,4,0);

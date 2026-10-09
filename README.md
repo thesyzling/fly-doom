@@ -2,7 +2,19 @@
 
 A research project to train a model based on the real fruit fly connectome to control Doom.
 
-**Status: Laya Vision is integrated with the frozen fly graph and existing 64-cell student in a research workbench.** In live paired runs, the visual model and student evaluate the same Doom frame; an explicit probability mixture selects the action. The interface places Doom beside the anatomical map, with synchronized playback, active-cell contributions, selected-connection inspection and checkpoint exports. A separate student candidate has completed offline Vision distillation and a small teacher-free gameplay comparison. Start with the [Vision architecture and developer guide](docs/VISION_WORKBENCH.md). Original fly connections remain fixed; general gameplay or biological validity is not established.
+**Status: the first biological-edge training pilot is integrated into a new research desk.** It modifies 13,867 existing fly connection strengths while preserving graph topology, transmitter signs, all unselected edges and the previously trained 64-cell decoder. Laya Vision supplies offline targets; the modified graph and frozen student select six Doom actions during live play. The measured imitation improvement is small and gameplay improvement is not established. See the [comparative interface research and synaptic methods](docs/LAB_DESIGN_RESEARCH.md) and [validation record](docs/VALIDATION.md).
+
+## Current research desk
+
+```powershell
+.\.venv\Scripts\python.exe -m flydoom.laboratory
+```
+
+Open **http://127.0.0.1:8770**. Stop an older server on that port first. The desk starts paused with `runs/synaptic-eligibility-v1`; **Single step** computes one decision and **Run** advances autonomously. Live play does not train or run Laya. **Synaptic training** shows before/after loss, actual changed edges and gain ranges. **Cell & connections** exposes voltage, synaptic current, refractory state, directed partners and original/current weights. **Activity & decision** separates biological spikes from all 64 engineered readout cells and their six output contributions.
+
+The brain scene contains all 75 measured region surfaces, optional 139,255 anchors and eight real context-neuron skeletons at startup. Search by root ID, cell type or super-class; load a selected cell and its partners. Up to 16 full skeletons can be layered at once. **Layers**, opacity, projection, **Fit brain** and **Expand** control the anatomical view; Escape exits expansion. Geometry is not physiological activity. The eight retained decisions can be reviewed with matching images and neural snapshots; **Follow live** returns to the newest state. The game image explicitly switches between decision input and action outcome.
+
+The two unsuccessful shared-gain searches are preserved. The accepted individual-edge pilot changed strengths by at most approximately 0.01%, with train KL 0.142918 → 0.142570 and validation KL 0.174334 → 0.173330 on 16/8 previously seen prefix examples. Its two familiar short game starts are a smoke test, not a new held-out benchmark. Older four- and six-action checkpoints remain available through their original commands below.
 
 Earlier text-Laya experiments remain available in the [learning guide](docs/LEARNING.md). That teacher's failed acceptance gate is preserved; it does not describe the newly integrated Vision checkpoint. See also the [bridge guide](docs/BRIDGE.md), [research plan](docs/RESEARCH.md), and [simulation assumptions](docs/SIMULATION.md).
 
@@ -28,19 +40,35 @@ A first human-feedback continuation trained from 35 explicit labels and selected
 
 The [target-side diagnostic](docs/TARGET_DIAGNOSIS.md) compares color image bins, the actual brightness input, and frozen fly outputs on separate episodes. Its local inspector shows each recorded game frame beside the 8 by 8 input grid and diagnostic predictions. This measures available visual information without retraining the game policy.
 
-## Start here
+## Six-action movement pilot
 
-On this prepared machine, start the Laya Vision research workbench:
+After the separate pilot has completed on this prepared machine:
 
 ```powershell
-.\.venv\Scripts\python.exe -m flydoom.research
+.\.venv\Scripts\python.exe -m flydoom.experiment --movement
 ```
 
-Open **http://127.0.0.1:8770**. The observatory places Doom and the connectome/readout map side by side. **Recorded runs** and **Live experiment** switch the source of both panels together. The active-cell table shows signed action-logit contributions; select a cell in the map or table to open its weight/input inspector. [Architecture, API contracts and artifact formats](docs/VISION_WORKBENCH.md) are documented for development.
+Use **Run / Pause / Single step** for the learned six-action controller (WAIT, LEFT, RIGHT, ATTACK, FORWARD, BACKWARD). **Manual motor check** buttons apply a single explicit user-selected action while paused; these decisions are marked manual and do not train the model. The student still proposes probabilities. The six-action live mode runs without loading Laya Vision or allocating a GPU teacher. Its benchmark is a separate pilot and cannot be compared directly with the older four-action 20-start benchmark.
 
-**Enlarge brain** fits all 139,255 neuron reference positions to the map area; **Show circuit** restores the student and action layers. The projection selector offers 3D, XY, XZ and YZ views. Drag to rotate, Shift-drag to pan, and use **Reset map view** after zooming. These positions form an anatomical anchor cloud, not complete neuron shapes. Doom stays visible alongside the enlarged cloud on desktop.
+The map includes all neuron anchors and 75 real FlyWire-space neuropil region surfaces. **Brain regions** toggles the anatomical surfaces; **Expand view** expands the map (Escape exits). Select a biological neuron and press **Load neuron branches** to fetch its actual v783 skeleton. This loads the selected neuron's geometry, not all 139,255 full cell morphologies. Skeleton downloads require internet on a cache miss and retain at most 16 raw cached skeletons. The research map's region colors describe anatomical geometry, not activity.
 
-Use **Play run**, pause, arrows or the decision strip to inspect a recording. With the trained candidate loaded, its 49-decision student-only evaluation opens by default. Archived highlights use saved descending features and student spikes, while live mode shows full current biological spike counts. A source change never advances the game. Live controls provide **Single step**, **Run**, **Pause**, **End run** and **New run settings**. The earlier separate native-observation panel and long signal dashboard have been replaced by this shared workspace.
+Live history is bounded to eight full neural snapshots. **Release idle memory** keeps only the latest snapshot and releases a loaded Vision observer when safe. In the older four-action workbench, the observer loads on demand and unloads after 60 seconds idle. This releases its process memory; the active connectome and trained weights remain available. Recorded runs, datasets and model files are not cache files.
+
+## Earlier four-action benchmark workbench
+
+On this prepared machine, open the completed-training / benchmark / live workbench:
+
+```powershell
+.\.venv\Scripts\python.exe -m flydoom.experiment
+```
+
+Open **http://127.0.0.1:8770**. Choose a checkpoint under **Trained model**, click **Load paused live model**, then **Single step** or **Run**. **Benchmark results** shows the completed four-model comparison; loading a model does not retrain it or rerun the benchmark. The launcher verifies completed training, checkpoint hashes, the locked benchmark and recomputed scores/intervals. It starts in live mode with the common parent and alpha zero. Vision remains an observer; the student chooses the action. Future reserved test seeds are blocked from live demonstrations when the reservation file is present.
+
+The observatory places Doom and the connectome/readout map side by side. **Recorded runs** and **Live experiment** switch the source of both panels together. The active-cell table shows signed action-logit contributions; select a cell in the map or table to open its weight/input inspector. [Architecture, API contracts and artifact formats](docs/VISION_WORKBENCH.md) are documented for development.
+
+The map opens with an enlarged, higher-contrast brain cloud. **Enlarge brain** fits all 139,255 neuron reference positions to the map area; **Show circuit** restores the student and action layers. The projection selector offers 3D, XY, XZ and YZ views. Drag to rotate, Shift-drag to pan, and use **Reset map view** after zooming. These positions form an anatomical anchor cloud, not complete neuron shapes. Doom stays visible alongside the enlarged cloud on desktop.
+
+Use **Play run**, pause, arrows or the decision strip to inspect a recording. The archive selector prefers a recording with the loaded checkpoint hash. Choosing an archive does not change the live model. Archived highlights use saved descending features and student spikes, while live mode shows full current biological spike counts. A source change never advances the game. Live controls provide **Single step**, **Run**, **Pause**, **End run** and **New run settings**. The earlier separate native-observation panel and long signal dashboard have been replaced by this shared workspace.
 
 For the earlier student-only observer:
 

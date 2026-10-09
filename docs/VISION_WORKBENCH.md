@@ -6,6 +6,21 @@ The initial three-start local comparison measured 3/3 target kills and mean retu
 
 ## Launch and inspect
 
+For the completed recovery benchmark and explicit live model selection on the prepared machine:
+
+```powershell
+.\.venv\Scripts\python.exe -m flydoom.experiment --check
+.\.venv\Scripts\python.exe -m flydoom.experiment
+```
+
+The first command verifies artifacts without starting Doom. The second starts a paused live game with the common parent. **Trained model** offers the parent and all three completed recovery continuations. Choose one, press **Load paused live model**, then **Single step** or **Run**. **Pause** waits at the next decision boundary; **End run** closes that episode. A model can be loaded while paused and idle, or after a run ends. Switching closes the previous paused run, rebuilds its weight inspector and map links, and starts a new paused game with alpha zero. The checkpoint hash beside the selector identifies live weights; selecting an archive never changes them. Vision still executes as an observer at alpha zero.
+
+**Benchmark results** displays the completed October 6 comparison, with all four models, selected epochs, hit counts, mean returns and paired intervals. It does not rerun evaluation when opened. `flydoom.experiment` checks the locked protocol, completed training, checkpoint identity, shared starts, recomputed scores and paired uncertainty before startup. A live demonstration is not a held-out benchmark or online training. Completing the configured training budget does not establish mastery of the game. The existing benchmark runner remains `flydoom.vision_recovery_eval`; use fresh output folders and a newly defined protocol for future studies.
+
+The optional `--reservation` file defaults to `runs/vision-recovery-reservation-v2/plan.json`. If present, its hash is verified and its 20 test seeds are rejected by both model loading and new live runs, including any episode range that crosses one. The new application layer preserves the historical Python implementations and their experiment hashes. `--model seed-101` chooses an explicit startup candidate; `--port 8771` uses a second port. All four models are offered without declaring a winner.
+
+The original paired workbench remains available with its earlier defaults:
+
 ```powershell
 .\.venv\Scripts\python.exe -m flydoom.research
 ```
@@ -221,3 +236,26 @@ The prepared evaluation lives under `runs/vision-recovery-gameplay-v1`; its four
 The prepared parent scored 13/20 target-hit episodes, mean return -135.15. Continuations 101/202/303 scored 15/20, 14/20 and 15/20, with mean returns -72.30, -78.15 and -74.70. Independent auditing reproduced all 2811 decisions and checked 13864 frame hashes. Edge loaded the four archives and inspected 15 decisions per condition using each recording's own weights. All paired intervals include zero, and four parent-successful starts fail under every continuation. The active workbench therefore remains on its tested parent; the experiment does not automatically promote any candidate.
 
 Repeating these commands on the same study repeats the same 20 openings. After their first gameplay evaluation they are inspected development data, not a new untouched test set. Further tuning requires a separately reserved evaluation set before observing its outcomes.
+
+## Anatomical regions, selected branches and memory limits
+
+The experiment entry point now serves `/api/anatomy` and `/api/skeleton?id=ROOT_ID`. The former verifies and normalizes all 75 downloaded FlyWire-space neuropil region meshes (68,860 triangles). The latter fetches a precomputed v783 skeleton for an exact ID already present in the graph. Mesh and skeleton coordinates are nanometers; both are converted to micrometers and normalized with the same center/extent as the existing anchors. The renderer fits the union of anchors, regions and any selected skeleton. Region surfaces describe anatomical boundaries, not activation or cell membranes. Skeleton segments represent neurite geometry, not synaptic contacts. Source IDs and hashes are retained under `data/anatomy/flywire`.
+
+**Brain regions** toggles the surface layer. **Expand view** expands the map and Escape exits. Select a biological cell and press **Load neuron branches** for its real skeleton. Only the current selected skeleton is rendered. The disk cache retains up to 16 raw skeleton downloads; the surface assets total approximately 1.27 MB. Source: [FlyWire neuropil geometry](https://storage.googleapis.com/flywire_neuropil_meshes/neuropils/neuropil_mesh_v141.surf_v2/info), [fafbseg precomputed skeleton interface](https://fafbseg-py.readthedocs.io/en/latest/source/generated/fafbseg.flywire.get_skeletons.html). Geometry access needs internet only when a skeleton is not cached.
+
+The experiment keeps eight full neural snapshots instead of 96. **Release idle memory** retains the latest snapshot, runs garbage collection and closes a loaded Vision observer while paused and idle. The observer also unloads after 60 seconds idle and reloads on the next inference. Active graph tensors, checkpoints and recorded runs remain available. This is process-level GPU release, not a claim that deleting disk caches reduces model VRAM.
+
+## Six-action movement pilot
+
+```powershell
+.\.venv\Scripts\python.exe -m flydoom.movement_study --output runs/movement-pilot-repeat
+.\.venv\Scripts\python.exe -m flydoom.movement_live --checkpoint runs/movement-pilot-repeat --port 8772
+```
+
+On the prepared machine, `python -m flydoom.experiment --movement` opens `runs/movement-pilot-v1` at the regular port. Stop another server on that port first. The original four-action mode remains available without the flag. The two checkpoint schemas are intentionally distinct: historical action meanings, normalization and reports remain intact.
+
+`movement_core.py` adds FORWARD and BACKWARD after the existing four actions. The 64-cell student gains two output logits, six history indicators (two per past-action slot), and two previous-action indicators. Matching parent features and their normalization are transferred by name. Newly added inputs start with zero projection weights and neutral normalization; new action biases start at -2. Existing four logits are preserved for corresponding old input vectors, although six-way softmax probabilities necessarily change.
+
+The pilot reserves 8 training, 4 validation and 8 evaluation openings before teaching. Collection uses a declared six-step movement prefix followed by expanded-parent decisions, while the pinned Vision model labels every preceding image with six options. Validation removes exact training RGB/input matches. Training uses 80 epochs of KL imitation and chooses the lowest validation KL, including epoch zero. It evaluates the expanded parent and selected checkpoint on all eight reserved starts, without Vision, using a 48-decision bound and paired uncertainty. This is a single-seed engineering pilot, not a validated navigation model. It has no rehearsal of earlier four-action teaching data; evaluating forgetting and better backward demonstrations remains necessary.
+
+Live six-action inference loads the fly graph and trained student on CPU; no Vision worker is loaded. **Manual motor check** buttons require a paused idle run, execute exactly one requested four-tic action, and are explicitly marked manual. They are not automatic demonstrations or training labels. The ordinary **Run / Single step** controls use the student's argmax. Actual engine positions are retained solely as diagnostic outcomes and are never policy inputs. Momentum can briefly carry the player forward immediately after a backward command. The game panel shows an available post-action frame; the inspector explains the preceding observation that produced the decision. Six-action live observations are saved as JSONL and NPZ artifacts; the legacy four-action archive inspector is disabled in this mode.

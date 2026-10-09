@@ -1,8 +1,8 @@
 "use strict";
 const $=id=>document.getElementById(id),el=(tag,text)=>{const node=document.createElement(tag);if(text!==undefined)node.textContent=text;return node};
-const ACTIONS=['WAIT','MOVE_LEFT','MOVE_RIGHT','ATTACK'],COLORS=['#849089','#527cab','#5b9481','#bd784f'];
+let ACTIONS=['WAIT','MOVE_LEFT','MOVE_RIGHT','ATTACK'];const COLORS=['#849089','#527cab','#5b9481','#bd784f','#8068a6','#ae7f34'];
 const short=a=>a.replace('MOVE_',''),fixed=x=>Number(x).toFixed(5),pct=x=>(100*x).toFixed(1)+'%',argmax=p=>p.indexOf(Math.max(...p));
-const view={mode:'archive',record:null,signals:null,index:0,tic:0,playing:false,timer:null,request:0,selected:null,action:0,latest:null,meta:null,weights:null,map:null,runId:null,inspectRequest:0};
+const view={mode:'archive',record:null,signals:null,index:0,tic:0,playing:false,timer:null,request:0,selected:null,action:0,latest:null,meta:null,weights:null,map:null,runId:null,inspectRequest:0,changingModel:false,modelGeneration:0};
 function error(message){$('error').hidden=!message;$('error').textContent=message}
 async function api(path,body){const r=await fetch(path,body===undefined?undefined:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await r.json();if(!r.ok)throw Error(data.error||r.statusText);return data}
 function rowNow(){return view.mode==='archive'?view.record?.decisions[view.index]:view.latest}
@@ -19,18 +19,18 @@ class ObservatoryMap extends IntegratedMap {
     for(const name of ['pointerup','pointercancel'])this.overlay.addEventListener(name,()=>{rotating=false});
   }
   geometry(){
-    const key=`${this.yaw}:${this.pitch}`;
+    const positions=this.fitPositions||this.positions;const key=`${this.yaw}:${this.pitch}`;
     if(this.boundsKey!==key){
       const cy=Math.cos(this.yaw),sy=Math.sin(this.yaw),cp=Math.cos(this.pitch),sp=Math.sin(this.pitch);
       let left=Infinity,right=-Infinity,top=Infinity,bottom=-Infinity;
-      for(let i=0;i<this.positions.length;i+=3){const x=cy*this.positions[i]+sy*this.positions[i+2],z=-sy*this.positions[i]+cy*this.positions[i+2],y=cp*this.positions[i+1]-sp*z,depth=sp*this.positions[i+1]+cp*z,f=3/(3+depth);left=Math.min(left,x*f);right=Math.max(right,x*f);top=Math.min(top,y*f);bottom=Math.max(bottom,y*f)}
+      for(let i=0;i<positions.length;i+=3){const x=cy*positions[i]+sy*positions[i+2],z=-sy*positions[i]+cy*positions[i+2],y=cp*positions[i+1]-sp*z,depth=sp*positions[i+1]+cp*z,f=3/(3+depth);left=Math.min(left,x*f);right=Math.max(right,x*f);top=Math.min(top,y*f);bottom=Math.max(bottom,y*f)}
       this.projectedBounds={left,right,top,bottom};this.boundsKey=key;
     }
     const b=this.projectedBounds,area={left:18,right:this.brainFocus?this.w-18:this.w*.50-18,top:66,bottom:this.h-34};
     const scale=.92*Math.min((area.right-area.left)/(b.right-b.left),(area.bottom-area.top)/(b.bottom-b.top))*this.zoom;
     return {x:(area.left+area.right)/2-(b.left+b.right)/2*scale+this.pan.x,y:(area.top+area.bottom)/2-(b.top+b.bottom)/2*scale+this.pan.y,s:scale};
   }
-  focusBrain(enabled){this.brainFocus=enabled;this.anatomyOpacity=enabled?.30:.25;this.filter=0;$('mapFilter').value='0';this.zoom=1;this.pan={x:0,y:0};$('focusBrain').textContent=enabled?'Show circuit':'Enlarge brain';$('focusBrain').setAttribute('aria-pressed',String(enabled));this.draw()}
+  focusBrain(enabled){this.brainFocus=enabled;this.anatomyOpacity=enabled?.48:.32;this.filter=0;$('mapFilter').value='0';this.zoom=1;this.pan={x:0,y:0};$('focusBrain').textContent=enabled?'Show circuit':'Enlarge brain';$('focusBrain').setAttribute('aria-pressed',String(enabled));this.draw()}
   reset(){this.yaw=0;this.pitch=-.2;this.zoom=1;this.pan={x:0,y:0};$('brainView').value='3d';this.filter=0;$('mapFilter').value='0';this.draw()}
   layout(){
     this.nodes.clear();if(this.brainFocus)return;const step=Math.min(19,Math.max(10,this.w*.025)),x=this.w*.66,top=78;
@@ -38,10 +38,10 @@ class ObservatoryMap extends IntegratedMap {
     this.labelPositions={x,memory:memoryTop-20,previous:previousTop-20};
     for(let i=0;i<this.meta.hidden;i++)this.nodes.set(`student:${i}`,{x:x+(i%8-3.5)*step,y:top+Math.floor(i/8)*step,kind:'student',index:i,r:Math.max(3.5,step*.27)});
     this.meta.memory_features.forEach((name,i)=>this.nodes.set(`memory:${name}`,{x:x+(i%9-4)*step,y:memoryTop+Math.floor(i/9)*step,kind:'memory',index:i,r:3.5}));
-    this.meta.actions.forEach((name,i)=>{this.nodes.set(`action:${name}`,{x:this.w-32,y:86+i*66,kind:'action',index:i,r:8});this.nodes.set(`previous:${name}`,{x:x+(i-1.5)*step,y:previousTop,kind:'previous',index:i,r:3.5})});
+    this.meta.actions.forEach((name,i)=>{this.nodes.set(`action:${name}`,{x:this.w-32,y:86+i*Math.min(66,(this.h-145)/Math.max(1,this.meta.actions.length-1)),kind:'action',index:i,r:8});this.nodes.set(`previous:${name}`,{x:x+(i-1.5)*step,y:previousTop,kind:'previous',index:i,r:3.5})});
   }
   drawLabels(ctx){
-    if(this.brainFocus){ctx.fillStyle='#47596a';ctx.textAlign='center';ctx.font='13px Segoe UI';ctx.fillText('Fly brain / complete anchor cloud',this.w/2,30);ctx.font='10px Segoe UI';ctx.fillText(`${this.data.ids.length.toLocaleString()} neuron positions / click to inspect`,this.w/2,48);return}
+    if(this.brainFocus){ctx.fillStyle='#47596a';ctx.textAlign='center';ctx.font='13px Segoe UI';ctx.fillText(this.anatomyData?'Fly brain / anatomical regions + neurons':'Fly brain / complete anchor cloud',this.w/2,30);ctx.font='10px Segoe UI';ctx.fillText(`${this.data.ids.length.toLocaleString()} neurons${this.anatomyData?' / 75 region surfaces':''} / click to inspect`,this.w/2,48);return}
     const {x,memory,previous}=this.labelPositions;
     ctx.fillStyle='#47596a';ctx.textAlign='center';ctx.font='12px Segoe UI';
     ctx.fillText('Fly brain',this.w*.26,30);ctx.fillText(`${this.meta.hidden} trained cells`,x,30);
@@ -49,7 +49,7 @@ class ObservatoryMap extends IntegratedMap {
     if(this.meta.memory_features.length)ctx.fillText('Action memory',x,memory);
     ctx.fillText('Previous action',x,previous);
   }
-  async load(meta){this.anatomyOpacity=.25;await super.load(meta);this.liveMeta=meta;this.liveEdges=this.data.edges;this.mode='empty'}
+  async load(meta){this.anatomyOpacity=this.brainFocus?.48:.32;await super.load(meta);this.liveMeta=meta;this.liveEdges=this.data.edges;this.mode='empty'}
   upload(){const gl=this.gl;gl.bindBuffer(gl.ARRAY_BUFFER,this.countBuffer);gl.bufferData(gl.ARRAY_BUFFER,this.counts,gl.DYNAMIC_DRAW)}
   clearRecord(){if(!this.data)return;this.mode='empty';this.snapshot=null;this.inspected=null;this.selected=null;this.counts.fill(0);this.data.edges=[];this.upload();this.draw();$('mapNote').textContent='Loading the recording’s own neural data…'}
   archived(row,signals,data){
@@ -82,16 +82,18 @@ class ObservatoryMap extends IntegratedMap {
 function pause(){clearTimeout(view.timer);view.timer=null;view.playing=false;$('play').textContent='▶ Play run'}
 function frame(){const row=rowNow();if(!row)return;
   if(view.mode==='archive'){$('gameFrame').src=row.frames[view.tic];const final=view.tic===row.frames.length-1;$('frameTiming').textContent=view.tic===0?'Observation before the decision':`After game tic ${view.tic} / ${row.effect.game_tics}`;$('outcomeBadge').textContent=final&&row.effect.kill_delta?'TARGET HIT':final&&row.effect.episode_finished?'EPISODE ENDED':'';$('outcomeBadge').classList.toggle('hit',final&&row.effect.kill_delta>0);if(final&&row.effect.episode_finished&&!row.effect.terminal_image_available)$('frameTiming').textContent='Last available frame · episode ended (engine counter)'}
-  else{$('gameFrame').src=row.frame;$('frameTiming').textContent='Live observation before action · outcome after action';$('outcomeBadge').textContent=row.effect?.kill_delta?'TARGET HIT':row.effect?.episode_finished?'EPISODE ENDED':'';$('outcomeBadge').classList.toggle('hit',row.effect?.kill_delta>0)}
+  else{$('gameFrame').src=row.after_frame||row.frame;$('frameTiming').textContent='Live observation before action · outcome after action';$('outcomeBadge').textContent=row.effect?.kill_delta?'TARGET HIT':row.effect?.episode_finished?'EPISODE ENDED':'';$('outcomeBadge').classList.toggle('hit',row.effect?.kill_delta>0)}
   $('episodeLabel').textContent=`EP ${row.episode} / DECISION ${row.decision}`;$('actionBadge').textContent=short(row.action);$('returnLabel').textContent=`RETURN ${Number(row.return).toFixed(0)}`;
 }
 function paintDecision(){const row=rowNow();if(!row?.decision&&view.mode==='live'&&!row?.sequence)return;if(!row)return;
   frame();const probs=row.applied_probabilities||row.probabilities,vision=view.mode==='archive'?row.vision_probabilities:row.vision?.probabilities;
   $('actionChoices').replaceChildren(...ACTIONS.map((name,i)=>{const button=el('button');button.setAttribute('aria-pressed',String(view.action===i));button.append(el('span',short(name)),el('strong',pct(probs[i])),el('small',row.action===name?'APPLIED':'INSPECT'));const bar=el('div');bar.className='prob-bar';const v=el('i'),s=el('i');v.style.width=pct(vision?row.alpha*vision[i]:0);s.className='student';s.style.width=pct((vision?1-row.alpha:1)*row.probabilities[i]);bar.append(v,s);button.append(bar);button.onclick=()=>{pause();view.action=i;paintDecision()};return button}));
+  if(row.after_frame)$('frameTiming').textContent='After action ? neural values explain the preceding observation';
   $('controllerLabel').textContent=!vision||row.alpha===0?'STUDENT CONTROL':row.alpha===1?'VISION CONTROL':'MIXED CONTROL';
   $('visionRole').textContent=vision?`Vision ${short(ACTIONS[argmax(vision)])} ${pct(Math.max(...vision))} · student ${short(row.student_action||ACTIONS[argmax(row.probabilities)])} · mix ${row.alpha.toFixed(2)} / ${(1-row.alpha).toFixed(2)}`:'Vision was not executed. The student selected every recorded action.';
+  if(row.manual_action){$('controllerLabel').textContent='MANUAL MOTOR CHECK';$('visionRole').textContent='You applied this button. Percentages show the forced action; bars show student proposals. This is not an autonomous model decision.'}
   const distilled=view.mode==='archive'?view.signals?.distilled_from_vision:view.meta.student_distilled_from_vision;
-  $('teachingRole').textContent=distilled?'Learned from Laya Vision offline. All weights are fixed during this run.':'Vision and student meet at the action mixture; this checkpoint predates Vision distillation.';
+  $('teachingRole').textContent=distilled?'Learned from Laya Vision offline. All weights are fixed during this run.':'Vision and student meet at the action mixture; this checkpoint predates Vision distillation.';if(view.meta.movement&&view.meta.distillation_metrics?.initial.train.teacher_actions?.[5]===0)$('teachingRole').textContent+=' Six-action pilot: backward is enabled, but there were no backward teacher top-choice examples. Retreat skill is not established.';
   const weights=weightsNow(),activity=activityNow();$('activeCells').replaceChildren();$('contributionHeading').textContent=`${short(ACTIONS[view.action])} Δlogit`;
   if(weights){const ranked=activity.map((a,i)=>({a,i,value:a*weights[view.action][i]})).filter(x=>x.a>0).sort((a,b)=>Math.abs(b.value)-Math.abs(a.value));$('activeCount').textContent=`${ranked.length} ACTIVE / ${activity.length}`;
     for(const {a,i,value} of ranked.slice(0,6)){const row=el('tr');row.classList.toggle('selected',view.selected===`student:${i}`);const td=el('td'),button=el('button',`S${String(i).padStart(2,'0')}`),choice=positiveChoice(a,weights,i),dot=el('i');dot.className='cell-dot';dot.style.setProperty('--cell-color',choice===null?'#9aa89d':COLORS[choice]);button.prepend(dot);button.onclick=()=>select(`student:${i}`);td.append(button);const term=el('td',(value>=0?'+':'')+fixed(value));term.className=value<0?'negative-text':'';row.append(td,el('td',Math.round(a*8)),el('td',choice===null?'No positive contribution':short(ACTIONS[choice])),term);$('activeCells').append(row)}}
@@ -115,9 +117,9 @@ async function loadRecord(id){pause();const token=++view.request;view.runId=id;v
   }catch(e){if(token===view.request){error(e.message);$('mapNote').textContent='Neural data unavailable; no activity is inferred.'}}
 }
 async function refresh(){try{const list=await api('/api/replays'),previous=$('runSelect').value;const preferred=list.find(r=>r.checkpoint_sha256===view.meta.checkpoint_sha256&&r.student_only);$('runSelect').replaceChildren(...list.map(r=>{const option=el('option',r.title);option.value=r.id;return option}));if(!list.length){$('runSummary').textContent='Complete a live run to create a recording.';return}$('runSelect').value=list.some(r=>r.id===previous)?previous:preferred?.id||list[0].id;await loadRecord($('runSelect').value)}catch(e){error(e.message)}}
-function select(id){pause();if(view.map.brainFocus&&!view.map.lookup.has(id))view.map.focusBrain(false);view.selected=id;if(id.startsWith('action:'))view.action=ACTIONS.indexOf(id.split(':')[1]);paintDecision()}
+function select(id){pause();$('skeletonStatus').textContent='';if(view.map.brainFocus&&!view.map.lookup.has(id))view.map.focusBrain(false);view.selected=id;if(id.startsWith('action:'))view.action=ACTIONS.indexOf(id.split(':')[1]);paintDecision()}
 function tableRow(values){const row=el('tr');for(const value of values)row.append(el('td',value));return row}
-async function inspect(){const row=rowNow(),key=view.selected;if(!row||!key)return;const token=++view.inspectRequest;$('inspector').hidden=false;$('inspectorTitle').textContent=key;$('inputRows').replaceChildren();$('outputRows').replaceChildren();$('inspectorNote').textContent='';
+async function inspect(){$('loadSkeleton').hidden=!view.meta.anatomy_available||!view.map.lookup.has(view.selected);const row=rowNow(),key=view.selected;if(!row||!key)return;const token=++view.inspectRequest;$('inspector').hidden=false;$('inspectorTitle').textContent=key;$('inputRows').replaceChildren();$('outputRows').replaceChildren();$('inspectorNote').textContent='';
   if(view.mode==='archive'){
     const signals=view.signals,data=signalNow();if(!data)return;
     if(key.startsWith('student:')){const i=Number(key.split(':')[1]),cell=data.cells[i];$('inspectorTitle').textContent=`Student ${String(i).padStart(2,'0')} / ${Math.round(data.activity[i]*8)} spikes`;
@@ -139,8 +141,23 @@ async function inspect(){const row=rowNow(),key=view.selected;if(!row||!key)retu
 async function mode(next){pause();view.mode=next;view.selected=null;view.inspectRequest++;$('inspector').hidden=true;$('archiveMode').setAttribute('aria-pressed',String(next==='archive'));$('liveMode').setAttribute('aria-pressed',String(next==='live'));$('archiveBar').hidden=next==='live';$('liveBar').hidden=next==='archive';$('transport').hidden=next==='live';$('decisionStrip').hidden=next==='live';$('mapSource').textContent=next==='archive'?'RECORDED OUTPUTS':'LIVE SPIKES';view.map.clearRecord();error('');
   if(next==='archive'){if(view.record){view.action=ACTIONS.indexOf(rowNow().action);paintDecision()}$('checkpointLabel').textContent='RECORD '+(view.signals?.checkpoint_sha256.slice(0,12)||'loading')}else{view.map.activitySequence=-1;$('checkpointLabel').textContent='LIVE '+view.meta.checkpoint_sha256.slice(0,12);if(view.latest?.sequence){view.action=Math.max(0,ACTIONS.indexOf(view.latest.action));paintDecision();await view.map.live(view.latest)}}
 }
-async function metadata(){view.meta=await api('/api/meta');for(const [id,key] of [['seed','seed'],['episodes','episodes'],['limit','max_decisions'],['alpha','alpha']])$(id).value=view.meta[key];const m=view.meta.distillation_metrics;$('trainingSummary').textContent=m?`Vision distillation, epoch ${m.selected_epoch}. Validation teacher agreement: ${pct(m.initial.validation.teacher_agreement)} → ${pct(m.final.validation.teacher_agreement)}. This is imitation accuracy, not a win rate.`:'The live checkpoint retains its earlier training history.';$('provenance').replaceChildren();for(const [key,value] of [['Vision revision',view.meta.vision.revision],['Live student SHA',view.meta.checkpoint_sha256],['Graph',`${view.meta.neurons} cells / ${view.meta.connections} directed pairs`],['Live run',view.meta.output]])$('provenance').append(el('dt',key),el('dd',value))}
-async function poll(){try{const old=view.latest;view.latest=await api('/api/state');$('connection').textContent='LOCAL / CONNECTED';$('liveStatus').textContent=view.latest.busy?'Computing decision':view.latest.phase==='ready'?(view.latest.paused?'Paused':'Running'):view.latest.phase;const ended=['completed','stopped','error'].includes(view.latest.phase);for(const id of ['runLive','pauseLive','stepLive','stopLive'])$(id).disabled=ended||((id==='stepLive'||id==='runLive')&&view.latest.busy);$('newRun').disabled=!ended;
+async function metadata(){view.meta=await api('/api/meta');ACTIONS=view.meta.actions||ACTIONS;if(view.meta.movement){$('archiveMode').hidden=true;$('alpha').disabled=true;$('episodes').disabled=true;$('motorChecks').hidden=false;}for(const [id,key] of [['seed','seed'],['episodes','episodes'],['limit','max_decisions'],['alpha','alpha']])$(id).value=view.meta[key];const m=view.meta.distillation_metrics;$('trainingSummary').textContent=m?`Vision distillation, epoch ${m.selected_epoch}. Validation teacher agreement: ${pct(m.initial.validation.teacher_agreement)} → ${pct(m.final.validation.teacher_agreement)}. This is imitation accuracy, not a win rate.`:'The live checkpoint retains its earlier training history.';$('provenance').replaceChildren();for(const [key,value] of [['Vision revision',view.meta.vision.revision],['Live student SHA',view.meta.checkpoint_sha256],['Graph',`${view.meta.neurons} cells / ${view.meta.connections} directed pairs`],['Live run',view.meta.output]])$('provenance').append(el('dt',key),el('dd',value))}
+async function modelCatalog(){
+  if(!view.meta.model_selection)return;
+  const catalog=await api('/api/models');$('modelPanel').hidden=false;$('modelSelect').replaceChildren();$('benchmarkRows').replaceChildren();
+  for(const model of catalog.models){const active=model.sha256===catalog.active_sha256,option=el('option',`${model.id} / ${model.sha256.slice(0,12)}`);option.value=model.id;option.selected=active;$('modelSelect').append(option);const paired=model.paired;
+    const difference=paired?`${(100*paired.hit_rate_difference).toFixed(0)} pp / [${paired.hit_rate_interval95.map(v=>(100*v).toFixed(0)).join(', ')}] pp`:'Reference';
+    const row=tableRow([model.id,`Completed / epoch ${model.selected_epoch}`,`${model.scores.hits} / ${model.scores.episodes}`,model.scores.mean_return.toFixed(2),difference]);row.classList.toggle('loaded',active);$('benchmarkRows').append(row);
+  }
+  $('modelStatus').textContent='LIVE WEIGHTS '+catalog.active_sha256.slice(0,12);$('benchmarkScope').textContent=catalog.scope;$('liveRule').textContent=catalog.live_rule;
+}
+$('loadModel').onclick=async()=>{
+  pause();view.changingModel=true;view.modelGeneration++;view.request++;view.inspectRequest++;$('loadModel').disabled=true;$('modelStatus').textContent='Loading verified weights…';
+  try{await api('/api/model',{model_id:$('modelSelect').value,seed:Number($('seed').value)});view.latest=null;view.selected=null;view.map.clearRecord();view.map.activitySequence=-1;await metadata();view.weights=await api('/api/weights');await view.map.load(view.meta);await modelCatalog();$('actionChoices').replaceChildren();$('activeCells').replaceChildren();await mode('live');error('');$('modelStatus').textContent+=' / PAUSED — press Run or Single step';}
+  catch(e){error(e.message);$('modelStatus').textContent='Model switch failed — '+e.message;}
+  finally{view.changingModel=false;$('loadModel').disabled=false;}
+};
+async function poll(){if(view.changingModel){setTimeout(poll,700);return}const generation=view.modelGeneration;try{const old=view.latest,state=await api('/api/state');if(view.changingModel||generation!==view.modelGeneration){setTimeout(poll,700);return}view.latest=state;$('connection').textContent='LOCAL / CONNECTED';$('liveStatus').textContent=view.latest.busy?'Computing decision':view.latest.phase==='ready'?(view.latest.paused?'Paused':'Running'):view.latest.phase;const ended=['completed','stopped','error'].includes(view.latest.phase);for(const id of ['runLive','pauseLive','stepLive','stopLive'])$(id).disabled=ended||((id==='stepLive'||id==='runLive')&&view.latest.busy);$('newRun').disabled=!ended;
     if(view.mode==='live'&&view.latest.sequence&&(!old||old.sequence!==view.latest.sequence||old.phase!==view.latest.phase)){view.action=Math.max(0,ACTIONS.indexOf(view.latest.action));paintDecision();await view.map.live(view.latest)}if(view.latest.error&&view.mode==='live')error(view.latest.error);
   }catch(e){$('connection').textContent='DISCONNECTED';error(e.message)}setTimeout(poll,700)}
 for(const [id,command] of [['runLive','run'],['pauseLive','pause'],['stepLive','step'],['stopLive','stop']])$(id).onclick=async()=>{try{await api('/api/control',{command});error('')}catch(e){error(e.message)}};
@@ -151,4 +168,13 @@ $('brainView').onchange=()=>{if(!view.map)return;const rotations={'3d':[0,-.2],x
 $('previous').onclick=()=>{pause();seek(view.index-1)};$('next').onclick=()=>{pause();seek(view.index+1)};$('seek').oninput=()=>{pause();seek(Number($('seek').value))};
 $('play').onclick=()=>{if(view.playing){pause();return}if(!view.record||!view.signals)return;if(view.index===view.record.decisions.length-1&&view.tic===rowNow().frames.length-1)seek(0);view.playing=true;$('play').textContent='Ⅱ Pause';schedule()};
 $('closeInspector').onclick=()=>{view.selected=null;view.inspectRequest++;$('inspector').hidden=true;view.map.inspected=null;view.map.selected=null;paintDecision();view.map.draw()};
-(async()=>{try{await metadata();view.weights=await api('/api/weights');view.map=new ObservatoryMap(select);await view.map.load(view.meta);await poll();await refresh()}catch(e){error(e.message)}})();
+(async()=>{try{await metadata();view.weights=await api('/api/weights');view.map=new ObservatoryMap(select);await view.map.load(view.meta);view.map.focusBrain(true);if(view.meta.anatomy_available)await view.map.loadAnatomy();await modelCatalog();await poll();await refresh();if(view.meta.model_selection||view.meta.movement)await mode('live')}catch(e){error(e.message)}})();
+
+function expandBrain(enabled){view.map.focusBrain(true);document.querySelector('.brain-panel').classList.toggle('is-expanded',enabled);document.body.style.overflow=enabled?'hidden':'';$('fullBrain').textContent=enabled?'Close expanded view':'Expand view';view.map.draw()}
+$('fullBrain').onclick=()=>expandBrain(!document.querySelector('.brain-panel').classList.contains('is-expanded'));
+document.addEventListener('keydown',e=>{if(e.key==='Escape')expandBrain(false)});
+$('showAnatomy').onchange=()=>view.map?.draw();
+$('loadSkeleton').onclick=async()=>{const id=view.selected;$('skeletonStatus').textContent='Loading v783 branches?';try{const data=await api('/api/skeleton?id='+id);if(view.selected!==id)return;view.map.setSkeleton(data);$('skeletonStatus').textContent=`${data.nodes} nodes / ${data.segments} branches (selected neuron)`}catch(e){$('skeletonStatus').textContent=e.message}};
+$('releaseMemory').onclick=async()=>{try{const result=await api('/api/release-memory',{});error('');$('liveStatus').textContent=result.note}catch(e){error(e.message)}};
+
+for(const button of document.querySelectorAll('[data-motor]'))button.onclick=async()=>{try{await api('/api/manual',{action:button.dataset.motor});error('')}catch(e){error(e.message)}};
