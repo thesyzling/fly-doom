@@ -71,7 +71,7 @@ async function loadSkeleton(id){if(lab.map.skeletons.has(id))return;const data=a
 async function loadCells(ids){
   if(lab.skeletonLoading)return;lab.skeletonLoading=true;$('loadContext').disabled=true;$('loadCell').disabled=true;$('loadPartners').disabled=true;
   const errors=[];try{for(let i=0;i<ids.length;i++){try{$('branchCount').textContent=`Loading ${i+1}/${ids.length}…`;await loadSkeleton(ids[i])}catch(e){errors.push(ids[i]+': '+e.message)}}}
-  finally{lab.skeletonLoading=false;$('loadContext').disabled=false;$('loadCell').disabled=!lab.selected;$('loadPartners').disabled=!lab.selected;$('branchCount').textContent=`${lab.map.skeletons.size} real cells / max 16`}
+  finally{lab.skeletonLoading=false;$('loadContext').disabled=false;$('loadCell').disabled=!lab.selected;$('loadPartners').disabled=!lab.selected;$('branchCount').textContent=`${lab.map.skeletons.size} real cells / max 32`}
   if(errors.length)throw Error('Some skeletons could not load: '+errors.join('; '));
 }
 async function search(){const data=await api('/api/cells?q='+encodeURIComponent($('query').value));$('searchResults').replaceChildren(...data.cells.map(c=>{const b=linkCell(c.id,c.label);b.append(el('small',c.id));return b}));if(!data.cells.length)$('searchResults').textContent='No cells match this query.'}
@@ -90,14 +90,14 @@ $('expand').onclick=()=>expanded(!$('anatomyPanel').classList.contains('expanded
 $('before').onclick=()=>{lab.after=false;frame()};$('after').onclick=()=>{lab.after=true;frame()};
 
 function history(){
-  const s=lab.latest;if(!s?.retained_sequences)return;
-  $('history').replaceChildren(...s.retained_sequences.map(sequence=>{const b=el('button',String(sequence-1).padStart(2,'0'));b.setAttribute('aria-pressed',String(sequence===lab.shown?.sequence));b.title='Inspect retained decision '+(sequence-1);b.onclick=safe(async()=>{await api('/api/control',{command:'pause'});lab.follow=false;$('liveFollow').setAttribute('aria-pressed','false');await paintSnapshot(await api('/api/snapshot?sequence='+sequence));history()});return b}));
-  if(!lab.follow&&!s.retained_sequences.includes(lab.shown?.sequence))$('historyNote').textContent='Selected snapshot expired. Choose a retained decision or Follow live.';
-  else $('historyNote').textContent=lab.follow?'Eight neural snapshots in RAM · full decision logs on disk':'Reviewing a retained decision · game paused';
+  const s=lab.latest;if(!s?.retained_sequences)return; const sequences=s.archived_sequences||s.retained_sequences;
+  $('history').replaceChildren(...sequences.map(sequence=>{const b=el('button',String(sequence-1).padStart(2,'0'));b.setAttribute('aria-pressed',String(sequence===lab.shown?.sequence));b.title='Inspect recorded decision '+(sequence-1);b.onclick=safe(async()=>{await api('/api/control',{command:'pause'});lab.follow=false;$('liveFollow').setAttribute('aria-pressed','false');await paintSnapshot(await api('/api/snapshot?sequence='+sequence));history()});return b}));
+  if(!lab.follow&&!sequences.includes(lab.shown?.sequence))$('historyNote').textContent='Selected snapshot expired. Choose a retained decision or Follow live.';
+  else $('historyNote').textContent=lab.follow?'All neural decisions on disk / eight in RAM':'Reviewing a recorded decision / game paused';
 }
 $('liveFollow').onclick=safe(async()=>{lab.follow=true;$('liveFollow').setAttribute('aria-pressed','true');await paintSnapshot(lab.latest);history()});
 for(const [id,command] of [['run','run'],['pause','pause'],['step','step'],['stop','stop']])$(id).onclick=safe(async()=>{if(command==='run'||command==='step'){lab.follow=true;$('liveFollow').setAttribute('aria-pressed','true')}await api('/api/control',{command})});
-$('release').onclick=safe(async()=>{await api('/api/release-memory',{});$('historyNote').textContent='Only the latest snapshot is retained. No GPU teacher is loaded.'});
+$('release').onclick=safe(async()=>{await api('/api/release-memory',{});$('historyNote').textContent='RAM history released; every neural decision remains available on disk.'});
 $('newRun').onclick=safe(async()=>{await api('/api/new-run',{seed:Number($('seed').value),episodes:1,max_decisions:Number($('limit').value),alpha:0});lab.generation++;lab.selectionRequest++;lab.latest=null;lab.shown=null;lab.detail=null;lab.map.activitySequence=-1;lab.map.inspected=null;lab.follow=true;$('liveFollow').setAttribute('aria-pressed','true');$('newRun').closest('details').open=false;lab.meta=await api('/api/meta')});
 
 function chart(report){
@@ -119,7 +119,7 @@ async function training(){
   for(const [label,value] of [['Train KL / before → after',`${fmt(r.initial.train.kl,4)} → ${fmt(r.final.train.kl,4)}`],['Validation KL / before → after',`${fmt(r.initial.validation.kl,4)} → ${fmt(r.final.validation.kl,4)}`],['Teacher frames / train + validation',`${r.initial.train.samples} + ${r.initial.validation.samples}`],['Magnitude bounds','0.75–1.25×']]){const box=el('div');box.append(el('small',label),el('b',value));$('trainingMetrics').append(box)}
   $('groupRows').replaceChildren(...r.group_labels.map((name,i)=>row([name,num(r.group_edge_counts[i]),fmt(r.gains[i],6)+'×'+(r.group_gain_ranges?' ['+r.group_gain_ranges[i].map(v=>fmt(v,5)).join('–')+']':'')])));chart(r);
   const games=r.development_gameplay,base=games.base_graph.filter(e=>e.kills>0).length,trained=games.trained_graph.filter(e=>e.kills>0).length;
-  $('trainingResult').textContent=`Development smoke comparison: base ${base}/2 target hits; trained ${trained}/2, 12 decisions maximum. These familiar starts are not a held-out benchmark. Validation did not select the gains. ${r.scope}`;
+  $('trainingResult').textContent=`Recorded comparison: parent ${base}/${games.base_graph.length} target hits; candidate ${trained}/${games.trained_graph.length}. See the checkpoint protocol and learning report for split identity and decision limits. ${r.scope}`;
   const changes=await api('/api/plastic-edges');$('changedRows').replaceChildren(...changes.edges.map(e=>row([cellTd(e.source),cellTd(e.target),fmt(e.base_weight,7),fmt(e.weight,7),Number(e.delta).toExponential(3),e.group])));
   facts($('provenance'),[['Synaptic patch SHA256',r.synapses_sha256],['Trained graph SHA256',r.trained_weights_sha256],['Frozen student SHA256',r.student_sha256],['Locked training plan SHA256',r.plan_sha256],['Directed graph pairs',num(r.total_edges)],['Morphology',lab.meta.anatomy_source],['Live output directory',lab.meta.output]]);
 }
@@ -138,12 +138,51 @@ async function poll(){
 }
 async function init(){
   lab.meta=await api('/api/meta');lab.weights=await api('/api/weights');
-  $('seed').value=lab.meta.seed;
+  $('seed').value=lab.meta.seed;$('encoderSummary').textContent=lab.meta.encoder_mix?`Contrast + motion mix ${lab.meta.encoder_mix}`:'64 intensity bins (active encoder)';
   for(const action of lab.meta.actions){const b=el('button',short(action));b.dataset.action=action;b.disabled=true;b.onclick=safe(async()=>{lab.follow=true;await api('/api/manual',{action})});$('motors').append(b)}
   lab.map=new LaboratoryMap(safe(selectCell));await lab.map.load(lab.meta);await lab.map.loadSurfaces();
-  await training();await search();poll();
+  await training();await search();poll();learningPoll();await refreshArchives();
   // Bounded real skeleton context; failures remain visible rather than fabricated.
   await loadCells(lab.meta.morphology_examples);
   if(lab.shown&&!lab.selected)await selectCell(lab.meta.morphology_examples[0]);
 }
+async function refreshArchives(){
+  const data=await api('/api/archives');$('archiveSelect').replaceChildren();
+  for(const record of data.runs){const o=el('option',`${record.id.split('/').slice(-2).join('/')} | ${record.decisions} snapshots${record.compatible?'':' | different checkpoint'}`);o.value=record.id;o.disabled=!record.compatible;$('archiveSelect').append(o)}
+  $('archiveNote').textContent=`${data.runs.length} recordings found (latest 100 maximum)`;
+}
+function resetView(){lab.generation++;lab.selectionRequest++;lab.latest=null;lab.shown=null;lab.detail=null;lab.map.activitySequence=-1;lab.map.inspected=null;lab.follow=true}
+$('archiveRefresh').onclick=safe(refreshArchives);
+$('archiveOpen').onclick=safe(async()=>{await api('/api/archive/open',{id:$('archiveSelect').value});resetView();lab.meta=await api('/api/meta')});
+$('learnStart').onclick=safe(async()=>{await api('/api/learning',{command:'start'});$('learnStart').disabled=true});
+$('learnCancel').onclick=safe(()=>api('/api/learning',{command:'cancel'}));
+$('learnActivate').onclick=safe(async()=>{await api('/api/learning',{command:'activate'});location.reload()});
+$('learnRollback').onclick=safe(async()=>{await api('/api/learning',{command:'rollback'});$('learningDetail').textContent='Registry rolled back. Load approved checkpoint to update the live desk.'});
+async function learningPoll(){
+  try{
+    const state=await api('/api/learning'),active=state.locked||state.worker_active;
+    $('learningState').textContent=`${state.status.toUpperCase()} / ${state.phase.replaceAll('_',' ')}`;
+    const ended=['completed','stopped','error'].includes(lab.latest?.phase);
+    $('learnStart').disabled=active||!ended;$('learnCancel').disabled=!active;
+    $('learnActivate').disabled=active||!ended;$('learnRollback').disabled=active||!ended||!state.can_rollback;$('archiveOpen').disabled=!ended;
+    const phases=['reserve','collect','encoder_ablation','optimize','validation','gate','test','completed'];
+    const equivalent={baseline:'collect',eligibility:'optimize',recurrent_optimization:'optimize'};
+    const index=phases.indexOf(equivalent[state.phase]||state.phase);
+    [...$('learningStages').children].forEach((node,i)=>{node.classList.toggle('current',i===index);node.classList.toggle('done',i<index)});
+    if(state.error)$('learningDetail').textContent=`Cycle stopped: ${state.error}. The previous champion remains selected.`;
+    else if(state.status==='completed')$('learningDetail').textContent=state.promoted?'The candidate passed the promotion gate and is registered. Load approved checkpoint to inspect it live.':'The cycle completed. Its candidate did not pass promotion; the previous champion remains active. Measurements and candidate weights are preserved.';
+    else if(active)$('learningDetail').textContent=`Working on ${state.phase.replaceAll('_',' ')}. ${state.experience?`Collected ${state.experience.train.frames} training and ${state.experience.validation.frames} validation frames.`:''} Candidate training runs in a separate process.`;
+    if(state.output&&['completed','validation','gate','test'].includes(state.phase)){
+      const evidence=await api('/api/learning/benchmarks');$('benchmarkRows').replaceChildren(...evidence.rows.map(r=>row([r.split+' / '+r.task,r.pairs,fmt(r.return.champion,1)+' / '+fmt(r.return.candidate,1),fmt(r.return.delta,1)+' ['+r.return.paired_95_interval.map(v=>fmt(v,1)).join(', ')+']',fmt(r.kills.champion,2)+' / '+fmt(r.kills.candidate,2)])));const report=await api('/api/learning/report');$('learningReport').textContent=JSON.stringify({output:state.output,encoder_mix:report.encoder_mix,changed_from_champion:report.changed_from_champion,initial_train_kl:report.initial?.train.kl,final_train_kl:report.final?.train.kl,initial_validation_kl:report.initial?.validation.kl,final_validation_kl:report.final?.validation.kl,gate:state.gate||report.gate,experience:report.experience},null,2);
+    }
+  }catch(e){$('learningState').textContent='Status unavailable: '+e.message}finally{setTimeout(learningPoll,3000)}
+}
+$('loadPopulation').onclick=safe(async()=>{const data=await api('/api/cells?q='+encodeURIComponent($('query').value));await loadCells(data.cells.slice(0,32).map(c=>c.id))});
+$('pathUseCell').onclick=()=>{$('pathSource').value=lab.selected||''};
+$('pathFind').onclick=safe(async()=>{
+  const data=await api(`/api/path?source=${encodeURIComponent($('pathSource').value)}&target=${encodeURIComponent($('pathTarget').value)}`);
+  lab.map.path=data.ids||[];lab.map.draw();$('pathResult').textContent=(data.found?data.ids.join(' -> '):'No bounded path found.')+` Visited ${data.visited} cells. ${data.note}`;
+});
+$('pathLoad').onclick=safe(()=>loadCells(lab.map.path||[]));
+$('pathClear').onclick=()=>{lab.map.path=[];lab.map.draw()};
 safe(init)();

@@ -12,13 +12,19 @@ import webbrowser
 
 import numpy as np
 
-from flydoom import anatomy
+from flydoom import anatomy, named_anatomy
 from flydoom.data import digest
 from flydoom.experiment import experiment_handler
 from flydoom.movement_core import ACTIONS, MEMORY
 from flydoom.movement_live import MovementCatalog, Session, Workbench
 from flydoom.synaptic import load_system
 from flydoom.synaptic_eligibility import restore
+from flydoom.neural_archive import NeuralArchive, ARRAYS
+from flydoom.live_map import activity_snapshot
+from flydoom.learning_features import ContrastMotionController
+from flydoom.learning_job import LearningJob
+from flydoom.learning_cycle import champion
+from flydoom.graph_paths import directed_path
 
 STATIC = Path(__file__).parent / "web/laboratory"
 
@@ -95,6 +101,24 @@ class LabSession(Session):
         self.report.update(connectome_weights_trained=self.catalog.plastic_report["connectome_weights_trained"],
                            synaptic_checkpoint_sha256=self.catalog.plastic_report["synapses_sha256"],
                            trained_graph_sha256=self.catalog.plastic_report["trained_weights_sha256"])
+        self.archive = NeuralArchive(self.output / "neural", {
+            "seed": self.seed, "max_decisions": self.max_decisions,
+            "student_sha256": self.identity["student_sha256"],
+            "graph_sha256": self.report["trained_graph_sha256"],
+            "encoder_mix": getattr(self.controller, "encoder_mix", 0.)})
+        self.report["neural_archive"] = str(self.archive.folder)
+
+    def run(self):
+        try: super().run()
+        finally:
+            with self.condition: self.paused = True
+
+    def control(self, command):
+        with self.condition:
+            if command == "pause" and self.phase in {"completed", "stopped", "error"}:
+                self.paused = True
+                return
+        return super().control(command)
 
     def publish(self, *args, **kwargs):
         # Hold the same reentrant condition until all per-decision telemetry exists.
@@ -102,20 +126,97 @@ class LabSession(Session):
             super().publish(*args, **kwargs)
             self.samples[-1]["current"] = self.controller.network.current.copy()
             self.samples[-1]["refractory"] = self.controller.network.refractory.copy()
+            self.archive.save(self.samples[-1])
+
+    def sample(self, sequence=None):
+        with self.condition:
+            if sequence is None: return self.samples[-1] if self.samples else None
+            row = next((s for s in self.samples if s["sequence"] == sequence), None)
+            return row if row is not None else self.archive.load(sequence)
 
     def snapshot(self, sequence=None):
         with self.condition:
-            result = super().snapshot(sequence)
-            result.pop("current", None); result.pop("refractory", None)
+            result = {"phase": self.phase, "paused": self.paused, "busy": self.busy,
+                      "error": self.error, "finished_episodes": self.report["episodes"]}
+            sample = self.sample(sequence)
+            if sample is not None:
+                result.update({k: v for k, v in sample.items() if k not in ARRAYS})
+                result["student_spikes"] = np.rint(sample["activity"] * 8).astype(int).tolist()
             result["retained_sequences"] = [s["sequence"] for s in self.samples]
+            result["archived_sequences"] = self.archive.sequences()
             return result
+
+    def inspect(self, key, sequence=None):
+        sample = self.sample(sequence)
+        if sample is None: raise ValueError("Waiting for the first decision")
+        return {**self.catalog.inspect(key, sample), "history": [], "recording": "Full per-decision state on disk"}
+
+    def map_activity(self, sequence): return activity_snapshot(self.sample(sequence))
 
 
 class Laboratory(Workbench):
+    def __init__(self, *args):
+        super().__init__(*args)
+        self.learning = LearningJob()
+
+    def release_memory(self):
+        result = super().release_memory()
+        self.session.archive.cache = None
+        result["note"] = "RAM snapshots and disk-read cache released; complete neural recordings remain on disk. The active graph stays loaded."
+        return result
+
+    def archives(self):
+        found = []
+        paths = sorted(Path("runs").glob("synaptic-live-*/run-*/neural/manifest.json"),
+                       key=lambda p: p.stat().st_mtime, reverse=True)[:100]
+        for path in paths:
+            value = json.loads(path.read_text())
+            found.append({"id": path.parent.parent.as_posix(), "decisions": len(value["records"]),
+                          **value["identity"], "compatible": value["identity"]["graph_sha256"] == self.catalog.plastic_report["trained_weights_sha256"]
+                          and value["identity"].get("encoder_mix", 0.) == getattr(self.catalog.controller, "encoder_mix", 0.)})
+        return {"runs": found}
+
+    def open_archive(self, key):
+        with self.lock:
+            if self.worker and self.worker.is_alive(): raise ValueError("End the current run before opening an archive")
+            row = next((r for r in self.archives()["runs"] if r["id"] == key), None)
+            if row is None or not row["compatible"]: raise ValueError("Archive requires its exact graph and encoder checkpoint")
+            archive = NeuralArchive(Path(key) / "neural")
+            if archive.manifest["identity"]["student_sha256"] != self.identity["student_sha256"]: raise ValueError("Archive readout identity mismatch")
+            from threading import Condition
+            session = LabSession.__new__(LabSession)
+            session.catalog, session.controller, session.model = self.catalog, self.catalog.controller, self.catalog.model
+            session.output, session.identity, session.archive = Path(key), self.identity, archive
+            session.condition, session.samples = Condition(), deque(maxlen=8)
+            session.samples.append(archive.load(archive.sequences()[-1]))
+            session.seed, session.max_decisions = row["seed"], row["max_decisions"]
+            session.phase, session.paused, session.busy, session.error = "completed", True, False, None
+            report = Path(key) / "report.json"
+            session.report = json.loads(report.read_text()) if report.exists() else {"episodes": []}
+            self.session = session
+            return {"opened": key}
+
+    def learning_command(self, command):
+        with self.lock:
+            if command == "cancel": return self.learning.cancel()
+            if self.worker and self.worker.is_alive(): raise ValueError("End the live run before starting training or replacing a checkpoint")
+            if command == "start": return self.learning.start()
+            if command == "rollback": return self.learning.rollback()
+            if command == "activate":
+                if self.learning.state()["locked"]: raise ValueError("Wait for the learning cycle to finish")
+                self.catalog, self.identity = load_catalog(Path(champion()["path"]))
+                self.map_data = None
+                return self.new_run()
+            raise ValueError("Unknown learning command")
+
     def new_run(self, seed=74000, episodes=1, max_decisions=75, alpha=0):
         if type(seed) is not int or not 0 <= seed < 2**32 or type(max_decisions) is not int or not 1 <= max_decisions <= 75 or episodes != 1 or alpha != 0:
             raise ValueError("Require one episode, 1..75 decisions, a uint32 seed and alpha zero")
         if seed in self.protected: raise ValueError("Reserved future benchmark seed")
+        for plan in Path("runs/learning").glob("cycle-*/plan.json"):
+            value = json.loads(plan.read_text())
+            if any(seed == row["seed"] for split in ("gate", "test", "validation") for row in value["splits"][split]):
+                raise ValueError("This seed belongs to a learning evaluation split")
         with self.lock:
             if self.worker and self.worker.is_alive(): raise ValueError("End the previous run first")
             self.session = LabSession(self.catalog, self.output / datetime.now().strftime("run-%H%M%S-%f"), self.identity, seed, max_decisions)
@@ -126,13 +227,13 @@ class Laboratory(Workbench):
         result = super().metadata()
         result.update(laboratory=True, synaptic_checkpoint=self.catalog.plastic_report,
                       morphology_examples=self.catalog.examples,
-                      snapshot_limit=8, anatomy_source="FlyWire FAFB14.1 / v783 skeletons")
+                      snapshot_limit=8, anatomy_source="78 named fafbseg neuropils in FlyWire space / v783 skeletons",
+                      encoder_mix=getattr(self.catalog.controller, "encoder_mix", 0.))
         return result
 
     def signals(self, sequence):
         with self.session.condition:
-            sample = next((s for s in self.session.samples if s["sequence"] == sequence), None)
-            if sample is None: raise ValueError("This neural snapshot has expired; select a retained decision")
+            sample = self.session.sample(sequence)
             indices = np.argsort(-sample["counts"].astype(np.int64), kind="stable")[:32]
             active = [{**self.catalog.label(str(self.catalog.ids[i])), "spikes": int(sample["counts"][i]),
                        "voltage_mv": float(sample["voltage"][i])} for i in indices if sample["counts"][i]]
@@ -153,6 +254,22 @@ def handler(work):
                     name, mime = files[parsed.path]
                     return self.send((STATIC / name).read_bytes(), mime + "; charset=utf-8")
                 if parsed.path == "/api/cells": return self.send(work.catalog.search(query.get("q", [""])[0]))
+                if parsed.path == "/api/learning": return self.send(work.learning.state())
+                if parsed.path == "/api/anatomy": return self.send(named_anatomy.surfaces(work.brain_map()))
+                if parsed.path == "/api/learning/report":
+                    state = work.learning.state()
+                    folder = Path(state.get("output", ""))
+                    if folder.resolve().parent != Path("runs/learning").resolve(): raise ValueError("No learning report")
+                    return self.send(json.loads((folder / "report.json").read_text()))
+                if parsed.path == "/api/learning/benchmarks":
+                    from flydoom.learning_audit import summarize
+                    folder = Path(work.learning.state().get("output", ""))
+                    if folder.resolve().parent != Path("runs/learning").resolve(): raise ValueError("No learning benchmark")
+                    path = folder / "benchmarks.json"
+                    return self.send({"rows": summarize(json.loads(path.read_text())) if path.exists() else []})
+                if parsed.path == "/api/archives": return self.send(work.archives())
+                if parsed.path == "/api/path":
+                    return self.send(directed_path(work.catalog, query["source"][0], query["target"][0], int(query.get("hops", [4])[0])))
                 if parsed.path == "/api/plastic-edges": return self.send({"edges": work.catalog.changed_edges, "total_plastic_edges": len(work.catalog.patch.offsets)})
                 if parsed.path == "/api/signals": return self.send(work.signals(int(query["sequence"][0])))
                 if parsed.path == "/api/snapshot":
@@ -165,6 +282,17 @@ def handler(work):
                 return self.send({"error": str(error)}, status=400)
 
         def do_POST(self):
+            if self.path in {"/api/learning", "/api/archive/open"}:
+                if self.headers.get("Origin") not in (None, f"http://127.0.0.1:{self.server.server_port}"):
+                    return self.send({"error": "Use the local origin"}, status=403)
+                try:
+                    size = int(self.headers.get("Content-Length", "0"))
+                    if self.headers.get("Content-Type") != "application/json" or not 0 < size <= 1024: raise ValueError("Invalid request")
+                    body = json.loads(self.rfile.read(size))
+                    result = work.learning_command(body["command"]) if self.path == "/api/learning" else work.open_archive(body["id"])
+                    return self.send(result)
+                except (ValueError, TypeError, KeyError, OSError) as error:
+                    return self.send({"error": str(error)}, status=400)
             if self.path != "/api/manual": return super().do_POST()
             if self.headers.get("Origin") not in (None, f"http://127.0.0.1:{self.server.server_port}"):
                 return self.send({"error": "Use the local origin"}, status=403)
@@ -177,14 +305,10 @@ def handler(work):
     return Handler
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--synapses", type=Path, default=Path("runs/synaptic-eligibility-v1"))
-    parser.add_argument("--port", type=int, default=8770)
-    parser.add_argument("--no-browser", action="store_true")
-    args = parser.parse_args()
+def load_catalog(folder):
     ids, controller, parent, model, rows, identity = load_system()
-    patch, report = restore(controller, ids, args.synapses, identity)
+    patch, report = restore(controller, ids, folder, identity)
+    controller = ContrastMotionController(controller, report.get("encoder_mix", 0.))
     catalog = LabCatalog(ids, controller, parent, rows)
     catalog.model, catalog.memory_names = model, MEMORY
     catalog.input_weights = model.input.weight.detach().numpy().copy()
@@ -192,6 +316,16 @@ def main():
     catalog.action_bias = model.readout.bias.detach().numpy().copy()
     catalog.recurrent = model.recurrent.weight.detach().numpy().copy()
     catalog.attach_patch(patch, report)
+    return catalog, identity
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--synapses", type=Path)
+    parser.add_argument("--port", type=int, default=8770)
+    parser.add_argument("--no-browser", action="store_true")
+    args = parser.parse_args()
+    catalog, identity = load_catalog(args.synapses or Path(champion()["path"]))
     work = Laboratory(catalog, identity, Path("runs") / datetime.now().strftime("synaptic-live-%Y%m%d-%H%M%S-%f"))
     server = ThreadingHTTPServer(("127.0.0.1", args.port), handler(work))
     try:

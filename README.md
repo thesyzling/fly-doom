@@ -2,7 +2,7 @@
 
 A research project to train a model based on the real fruit fly connectome to control Doom.
 
-**Status: the first biological-edge training pilot is integrated into a new research desk.** It modifies 13,867 existing fly connection strengths while preserving graph topology, transmitter signs, all unselected edges and the previously trained 64-cell decoder. Laya Vision supplies offline targets; the modified graph and frozen student select six Doom actions during live play. The measured imitation improvement is small and gameplay improvement is not established. See the [comparative interface research and synaptic methods](docs/LAB_DESIGN_RESEARCH.md) and [validation record](docs/VALIDATION.md).
+**Status: bounded automatic synaptic learning and persistent neural replay are implemented.** A separate cycle collects Laya Vision targets and measured movement feedback, trains gains on existing fly connections, runs paired independent evaluations and promotes only an accepted candidate. Live play uses a fixed approved checkpoint. This is a working research pipeline, not a claim that Doom training is complete. See the [automatic learning guide](docs/AUTOMATIC_LEARNING.md), [interface research](docs/LAB_DESIGN_RESEARCH.md), and [validation record](docs/VALIDATION.md).
 
 ## Current research desk
 
@@ -10,9 +10,17 @@ A research project to train a model based on the real fruit fly connectome to co
 .\.venv\Scripts\python.exe -m flydoom.laboratory
 ```
 
-Open **http://127.0.0.1:8770**. Stop an older server on that port first. The desk starts paused with `runs/synaptic-eligibility-v1`; **Single step** computes one decision and **Run** advances autonomously. Live play does not train or run Laya. **Synaptic training** shows before/after loss, actual changed edges and gain ranges. **Cell & connections** exposes voltage, synaptic current, refractory state, directed partners and original/current weights. **Activity & decision** separates biological spikes from all 64 engineered readout cells and their six output contributions.
+Open **http://127.0.0.1:8770**. Stop an older server on that port first. The desk starts paused with the approved checkpoint, falling back to `runs/synaptic-eligibility-v1` until a learning candidate passes its gate. **Single step** computes one decision and **Run** advances autonomously. **Cell & connections** exposes all selected-cell dynamics and original/current strengths; **Activity & decision** shows the 64 engineered readout cells and six action contributions.
 
-The brain scene contains all 75 measured region surfaces, optional 139,255 anchors and eight real context-neuron skeletons at startup. Search by root ID, cell type or super-class; load a selected cell and its partners. Up to 16 full skeletons can be layered at once. **Layers**, opacity, projection, **Fit brain** and **Expand** control the anatomical view; Escape exits expansion. Geometry is not physiological activity. The eight retained decisions can be reviewed with matching images and neural snapshots; **Follow live** returns to the newest state. The game image explicitly switches between decision input and action outcome.
+The brain scene now contains **78 named measured regions**, optional 139,255 anchors and real context-neuron skeletons. Filter a region, search exact IDs/types/classes, stream up to 32 skeletons, or inspect a directed graph path. **Fit brain**, **Expand**, projections and layer controls retain the full anatomical view. Every live decision is saved with the whole population's neural state; review it from the timeline or reopen a recording after restarting. The image can show decision input or action outcome.
+
+End the live run, then choose **Start one learning cycle** in **Experience to candidate**. The worker collects experience, optimizes a separate candidate and performs a paired gate and final test. **Load approved checkpoint** applies a successful promotion to a new paused run. Failed candidates preserve the existing policy. For repeated automatic cycles:
+
+```powershell
+.\.venv\Scripts\python.exe -m flydoom.learning_cycle --cycles 3
+```
+
+The [developer guide](docs/AUTOMATIC_LEARNING.md) explains all eight components, budgets, cancellation, rollback, data separation, rewards and interpretation limits.
 
 The two unsuccessful shared-gain searches are preserved. The accepted individual-edge pilot changed strengths by at most approximately 0.01%, with train KL 0.142918 → 0.142570 and validation KL 0.174334 → 0.173330 on 16/8 previously seen prefix examples. Its two familiar short game starts are a smoke test, not a new held-out benchmark. Older four- and six-action checkpoints remain available through their original commands below.
 

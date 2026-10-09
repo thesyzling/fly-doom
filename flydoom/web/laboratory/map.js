@@ -37,6 +37,8 @@ class LaboratoryMap extends IntegratedMap {
       for(let j=0;j<3;j++){vertices.set(p.subarray(i+j*3,i+j*3+3),(i/3+j)*6);vertices.set([nx,ny,nz],(i/3+j)*6+3)}
     }
     this.anatomyData=data;this.meshPositions=p;this.surfaceBuffer=this.gl.createBuffer();
+    const select=document.getElementById('regionFocus');
+    for(const part of data.parts){const option=document.createElement('option');option.value=part.id;option.textContent=part.name||('Region '+part.id);select.append(option)}
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER,this.surfaceBuffer);this.gl.bufferData(this.gl.ARRAY_BUFFER,vertices,this.gl.STATIC_DRAW);
     this.rebuildFit();this.draw();
   }
@@ -47,11 +49,14 @@ class LaboratoryMap extends IntegratedMap {
   }
   addSkeleton(data){
     if(this.skeletons.has(data.id))return;
-    if(this.skeletons.size>=16){const first=this.skeletons.keys().next().value;this.gl.deleteBuffer(this.skeletons.get(first).buffer);this.skeletons.delete(first)}
-    const positions=this.decode(data.positions_f32,Float32Array),buffer=this.gl.createBuffer();
+    const positions=this.decode(data.positions_f32,Float32Array),budget=24*1024*1024;
+    if(positions.byteLength>budget)throw Error('Skeleton exceeds the 24 MiB geometry budget');
+    const bytes=()=>[...this.skeletons.values()].reduce((n,s)=>n+s.positions.byteLength,0);
+    while(this.skeletons.size>=32||bytes()+positions.byteLength>budget){const first=this.skeletons.keys().next().value;this.gl.deleteBuffer(this.skeletons.get(first).buffer);this.skeletons.delete(first)}
+    const buffer=this.gl.createBuffer();
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER,buffer);this.gl.bufferData(this.gl.ARRAY_BUFFER,positions,this.gl.STATIC_DRAW);
     this.skeletons.set(data.id,{...data,positions,buffer});this.rebuildFit();this.draw();
-    document.getElementById('branchCount').textContent=`${this.skeletons.size} real cells / max 16`;
+    document.getElementById('branchCount').textContent=`${this.skeletons.size} real cells / max 32`;
   }
   clearSkeletons(){for(const s of this.skeletons.values())this.gl.deleteBuffer(s.buffer);this.skeletons.clear();this.rebuildFit();this.draw();document.getElementById('branchCount').textContent='0 cells loaded'}
   geometry(){
@@ -82,7 +87,8 @@ class LaboratoryMap extends IntegratedMap {
       const u=this.uniforms(this.surfaceProgram);gl.uniform1f(u('lineMode'),0);gl.bindBuffer(gl.ARRAY_BUFFER,this.surfaceBuffer);
       this.attribute(this.surfaceProgram,'pos',3,24,0);this.attribute(this.surfaceProgram,'normal',3,24,12);
       const colors=[[.48,.69,.74],[.58,.71,.73],[.40,.62,.70],[.65,.76,.68],[.50,.62,.77],[.68,.70,.60]];let start=0;
-      for(const part of this.anatomyData.parts){gl.uniform4f(u('tint'),...colors[Number(part.id)%colors.length],+document.getElementById('opacity').value);gl.drawArrays(gl.TRIANGLES,start,part.count);start+=part.count}
+      const focus=document.getElementById('regionFocus').value;
+      for(const part of this.anatomyData.parts){gl.uniform4f(u('tint'),...colors[Number(part.id)%colors.length],+document.getElementById('opacity').value);if(focus==='all'||focus===part.id)gl.drawArrays(gl.TRIANGLES,start,part.count);start+=part.count}
     }
     gl.disable(gl.DEPTH_TEST);gl.depthMask(false);gl.enable(gl.BLEND);
     if(document.getElementById('branches').checked&&this.skeletons.size){
@@ -102,9 +108,10 @@ class LaboratoryMap extends IntegratedMap {
       }
     }
     if(this.selected&&this.lookup.has(this.selected)){const p=this.point(this.selected);ctx.strokeStyle='#ffdf87';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(p.x,p.y,7,0,Math.PI*2);ctx.stroke()}
+    if(this.path?.length){ctx.strokeStyle='#ffe18e';ctx.fillStyle='#ffe18e';ctx.lineWidth=2;for(let i=0;i<this.path.length;i++){const p=this.point(this.path[i]);ctx.beginPath();ctx.arc(p.x,p.y,5,0,Math.PI*2);ctx.fill();if(i){const a=this.point(this.path[i-1]);ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(p.x,p.y);ctx.stroke()}ctx.font='11px Consolas';ctx.fillText(String(i+1),p.x+7,p.y-7)}}
     const scale=100*1.7/this.data.extent_um*this.geometry().s;ctx.strokeStyle='#9cb2bd';ctx.fillStyle='#9cb2bd';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(20,this.h-45);ctx.lineTo(20+scale,this.h-45);ctx.stroke();ctx.font='9px Consolas';ctx.fillText('100 µm · centre plane',20,this.h-51);
     gl.depthMask(true);
   }
   reset(){this.zoom=1;this.pan={x:0,y:0};this.draw()}
-  events(){super.events();for(const id of ['regions','opacity','anchors','spikes','branches'])document.getElementById(id).addEventListener('input',()=>this.draw())}
+  events(){super.events();for(const id of ['regions','opacity','anchors','spikes','branches','regionFocus'])document.getElementById(id).addEventListener('input',()=>this.draw())}
 }
