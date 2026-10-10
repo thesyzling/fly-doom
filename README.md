@@ -4,6 +4,41 @@ A research project to train a model based on the real fruit fly connectome to co
 
 **Status: the integrated visual-control research desk is working end to end.** The retained Laya Vision model, real anatomical map, trained visual circuit, six-action Doom decoder, live reward feedback and recorded-decision inspection now share one workspace. This is a completed software integration, not a claim of biological validation or strong Doom performance.
 
+## Sensorimotor research cycle (October 10, 2026)
+
+The five-stage extension now trains existing-edge type-pair gains, fits measured L1/L2 timing with an explicit input-adaptation model, extends the visual graph to real descending-neuron candidates, collects fresh Laya labels on two Doom maps, and benchmarks frozen candidates before persistent promotion. It retains the earlier controller when a candidate fails its paired game gate. The latest candidate remains available for explicit inspection.
+
+```powershell
+# Start a bounded autonomous training/evaluation cycle; retain every prior artifact.
+.\.venv\Scripts\python.exe -m flydoom.research_cycle --cycles 1
+# Inspect the latest completed sensorimotor candidate, even if promotion failed.
+.\.venv\Scripts\python.exe -m flydoom --candidate
+# Default launch uses the approved champion.
+.\.venv\Scripts\python.exe -m flydoom
+# Resume a verified live decoder in a NEW episode using its original checkpoint.
+.\.venv\Scripts\python.exe -m flydoom --checkpoint CHECKPOINT_FOLDER --resume-live "RUN_FOLDER"
+# Restore the preceding verified champion after a promotion.
+.\.venv\Scripts\python.exe -m flydoom.research_cycle --rollback
+```
+
+The research panel identifies the **active checkpoint**, **approved champion**, and **latest candidate** separately. It shows per-map frozen test results, actual timing curves, fitted time constants, gain changes and the promotion decision. The candidate uses 22,825 simulated cells (837 added anatomical relays/outputs) and 96 descending decoder inputs. All 139,255 anatomical anchors remain visible. Existing visual rows are preserved when the descending graph is added; the ventral nerve cord, muscles and biological action identities are not modeled. Doom buttons are an engineered readout.
+
+Automatic cycles resume the approved circuit weights, timing and, for a compatible descending checkpoint, its decoder and normalization. Each cycle collects fresh training experience and reserves separate validation, gate and final-test seeds/opening images before training. Final-test outcomes never select a candidate. `--cycles` accepts a bounded budget of 1 through 20. A rejected candidate does not replace the champion. Live reward learning modifies a separate decoder candidate; `--resume-live` restores its verified weights, not the mid-episode Doom state. Only an explicit research cycle can update the champion registry. No caches are deleted.
+
+The first completed cycle changed **182,661 existing edge magnitudes in 69 groups**. It used 317 training images (152 new + 165 retained), 60 fresh validation images, and 688 reward updates over 24 episodes. The reward-updated decoder failed teacher-validation nonregression and was rolled back to the distilled decoder. Final tests ran four policies on the same 16 reserved openings (64 evaluations): the candidate killed an enemy in 1/8 basic episodes and 3/8 corridor episodes; the parent scored 7/8 and 0/8. Corridor mean return improved from -105.6 to 229.1, while basic return regressed from -21.4 to -231.4. The separate gate rejected promotion. Teacher agreement was 63.3%; it is not game success.
+
+Timing training NRMSE fell from 0.5873 to 0.4544 after the plasticity stage, but previously seen low-luminance error was 0.6760, above the 0.5 waveform threshold and worse than the prior timing checkpoint. No biological validation claim is made. The candidate remains experimental. Source/weight hashes, all 46 reserved openings, live learner restoration, a real eye-to-DNp103 path and 16 exact full-state/action replays were verified. The 312-test suite passed; the browser showed no JavaScript errors or horizontal overflow at 390 px. Live candidate timing averaged 219 ms/decision in a 16-decision check; the earlier 82.5-ms visual-only measurement below is not a speed guarantee for this candidate. This remaining live latency and the task/physiology regressions need further work.
+
+Retained evidence: `runs/sensorimotor-learning/cycle-20261010-184257-980939/report.json`, its detailed sibling reports, and `runs/sensorimotor-ui-check/`. No datasets, checkpoints or caches were removed.
+
+The earlier visual-only controller and measurements below remain valid historical evidence. Their T4/T5-only limitations describe that checkpoint, not the new descending candidate.
+
+## Current gameplay status
+
+The desk now starts in **frozen evaluation**: the highest-probability neural action is used and weights remain fixed. **Explore & learn from reward** deliberately samples actions and is intended for experiments, not a fair playback benchmark. The active checkpoint's approval status appears beside the controls.
+
+A subsequent basic-aiming correction trained the descending readout on 725 engine-supervised training frames. It failed its 80% acceptance gate (11/16 kills) and was retained as an experimental candidate. In a separate matched test, it scored 16/24 kills versus the approved visual controller's 20/24. The approved controller therefore remains the default. These are basic-scenario measurements, not general Doom mastery; reliable visual targeting through the descending-only circuit remains unresolved. Detailed results are in `runs/sensorimotor-learning/aim-20261010-191727-751332/` and [research notes](docs/RESEARCH.md#aiming-correction-outcome).
+
 ## Start the complete workspace
 
 ```powershell
@@ -12,14 +47,28 @@ A research project to train a model based on the real fruit fly connectome to co
 
 The command verifies the trained checkpoint and opens the browser at the local address printed in the terminal. It selects an available port from 8782 through 8791, so an older server cannot silently receive the new page's requests. Existing model, anatomy and research caches are retained. No additional packages or downloads are required for the default map and controller.
 
-1. Press **Single step** to follow one image through the visual circuit, neural action decoder and game reward. **Run** plays continuously; **Pause** stops after the in-flight decision. **End run** ends the episode session.
+1. Press **Single step** to follow one image through the visual circuit, neural action decoder and game reward. **Run** plays continuously; **Pause** stops after the in-flight decision. **End run** ends the episode session. **Restart episode** finishes any in-flight record and automatically starts playing with a fresh, non-reserved seed. It keeps learned weights, the learning toggle and all earlier records; neural state and episode credit reset. The advanced **New episode** controls still allow a specified seed and a paused start.
 2. Inspect the **full brain beside Doom**: 139,255 anatomical cells and 78 named regions. The 21,988 simulated visual cells show signed graded states (amber positive, blue negative); the remaining gray cells are anatomical context. Drag to rotate, shift-drag to pan, scroll to zoom, or use **Fit brain** / **Expand**.
 3. Click a dot on the **eye input** to follow its provisional R1-6 -> L1 -> Mi1 assignment and an existing directed route toward a selected T4/T5 decoder cell. Click a path node or decision-table cell to inspect exact root IDs, existing contact counts, model weights, time constants and signed contributions. **Load selected branches** displays real morphology, reusing retained caches where available; an uncached cell requires the public morphology service.
 4. Pause and press **Compare this input with Laya**. The retained model processes that exact recorded image and shows all six probabilities beside the neural policy. It does not override actions or train weights during comparison. Model startup may take some time; the worker closes after comparison, while model files remain cached. The distillation chart displays the recorded training experiment rather than fabricated live training points.
-5. **Learn from reward** enables stochastic neural action selection and actual decoder updates. Disable it while paused for frozen argmax evaluation. The feedback panel shows reward, update magnitude and selected-action probability before/after the update. Click any **Recorded decision** to replay its image, brain state, input path and pre-update weights together.
-6. **New episode** retains this process's learned decoder. Restarting restores the verified experiment checkpoint. Records and live candidate weights remain under `runs/integrated-live-*/run-*/`; a live candidate is not automatically promoted to the evaluated checkpoint.
+5. **Frozen evaluation is the default.** **Explore & learn from reward** enables stochastic exploration and actual decoder updates; exploratory play may deliberately choose low-probability actions. Disable it while paused for repeatable argmax evaluation. The feedback panel shows reward, update magnitude and selected-action probability before/after the update. Click any **Recorded decision** to replay its image, brain state, input path and pre-update weights together.
+6. **New episode** and **Restart episode** retain this process's learned decoder. Restarting the Python server restores the selected verified experiment checkpoint. Records and live candidate weights remain under `runs/integrated-live-*/run-*/`; a live candidate is not automatically promoted to the evaluated checkpoint.
 
 `python -m flydoom.laboratory` and `python -m flydoom.retinal_play` also open this integrated desk. Use `python -m flydoom.laboratory --legacy-lif --port 8781` for the retained whole-brain LIF pilot. Explicit `--synapses` and `--no-visual-observer` options retain the legacy workflow. Use `--no-browser` to print the address without opening a tab.
+
+## Episode completion and diagnostics
+
+The basic scenario ends when its target is eliminated or its 300-tic episode timeout is reached (about 8.6 seconds of game time). The desk also caps an episode at 75 neural decisions. Wall-clock playback can take longer because encoding and recording take time. A still image at this boundary is not evidence of a crashed process. A completion banner now explains the reason and directs you to **Restart episode**; the recorded decision timeline remains usable.
+
+Live session folders contain `session.log` with lifecycle events and full Python exception traces. `native-fault.log` is reserved for fatal interpreter/native fault diagnostics when Python can capture them; a forced process termination or browser crash may leave no trace there. The terminal prints the log path. A state request that hangs for five seconds now reports **RECONNECTING** and is retried, instead of leaving polling stuck indefinitely. A recovered connection clears that connection warning. No dataset, model or cache is deleted by this recovery.
+
+## Live performance
+
+Run displays genuine intermediate engine frames instead of only one input image per decision. The browser checks for updates every 33 ms, receives a small status response when the decision is unchanged, and coalesces repeated anatomical redraws. Pausing or selecting history restores the exact recorded decision input. The live frame-update indicator reports observed image updates, not a guaranteed monitor refresh rate.
+
+Lossless NPZ records use buffered level-1 compression, hashing the bytes before one disk write. The latest archived state stays in a bounded in-memory snapshot for inspection. On Windows, a balanced `timeBeginPeriod(1)` / `timeEndPeriod(1)` request surrounds only engine communication. The Run loop follows 35 engine tics/s when computation fits; Single step remains immediate. No neural integration step, time constant, policy weight or reward rule was reduced to obtain the speedup.
+
+On this workstation, the optimized 12-decision check averaged **82.5 ms per decision** (95th percentile 95.5 ms), including record writes; the unchanged neural window is 114.3 ms. A headless browser with the full map open showed **28.5 genuine action-frame updates/s**, compared with the previous interface's 350-ms polling ceiling of 2.86 decision images/s. This is not a constant-35-FPS guarantee. All recorded arrays in a complete 23-decision episode matched the earlier implementation exactly. The complete suite passed 303 tests. Retained measurements: `runs/live-speed-20261010-180556/{optimized,browser-final,verification}.json`.
 
 ## Control and evidence
 

@@ -2,6 +2,11 @@
 
 // Anatomical context and recorded, signed graded states share exact root IDs.
 class GradedBrainMap extends LaboratoryMap {
+  draw(){
+    // Several matching views may finish together; render the anatomy once.
+    if(this.drawRequest)return;
+    this.drawRequest=requestAnimationFrame(()=>{this.drawRequest=0;super.draw()});
+  }
   initGL() {
     super.initGL();
     const gl=this.gl;gl.deleteProgram(this.program);this.program=gl.createProgram();
@@ -62,7 +67,7 @@ function drawRetina(snapshot,data){
   const canvas=$('retinaView'),ctx=canvas.getContext('2d'),img=new Image();
   img.onload=()=>{if(shown!==snapshot||retinaData!==data)return;ctx.drawImage(img,0,0,canvas.width,canvas.height);ctx.fillStyle='#06182055';ctx.fillRect(0,0,canvas.width,canvas.height);
     for(const dot of data.samples){ctx.beginPath();ctx.arc(dot.uv[0]*canvas.width,dot.uv[1]*canvas.height,dot.index===data.selected_index?5:2,0,Math.PI*2);ctx.fillStyle=dot.index===data.selected_index?'#fff':dot.drive>0?'#f8b15c':'#69bcea';ctx.fill()}};img.src=snapshot.frame;
-  $('retinaCaption').textContent=`${data.samples.length} visible samples. Selected R1-6 ${data.selected.root_id}; drive ${scientific(data.input_drive)}. Click a dot to inspect its graph path.`;
+  $('retinaCaption').textContent=`${data.samples.length} visible samples. Selected R1-6 ${data.selected.root_id}; raw contrast ${scientific(data.input_drive)}. Click a dot to inspect its graph path.`;
   $('pathStatus').textContent=data.reaches_decoder?'EXISTING PATH TO A DECODER CELL':'PARTIAL EXISTING PATH';
   $('pathFacts').textContent=data.edges.map(e=>`${e.source.label} -> ${e.target.label}: ${e.contacts} contacts, weight ${scientific(e.weight)}`).join(' | ');
   $('pathNodes').replaceChildren(...data.nodes.map(n=>{const b=el('button',n.label);b.append(el('small',n.id));b.onclick=safe(()=>selectIntegratedCell(n.id));return b}));
@@ -91,9 +96,10 @@ function drawTeacherHistory(){
   const selected=svgElement(svg,'circle',{cx:x,cy:155-125*d.final.validation.kl/max,r:4,fill:'#285940'});
   svgElement(selected,'title',{},`Selected epoch ${d.selected_epoch}, validation KL ${d.final.validation.kl.toFixed(6)}`);
   svgElement(svg,'text',{x:45,y:180,fill:'#637568','font-size':11},`Epoch 0 to ${end} / validation KL (lower is better)`);
+  $('trainingChartTitle').textContent=d.target_source?'Aiming correction / training history':'Measured distillation history';
   $('fitEpoch').textContent='SELECTED EPOCH '+d.selected_epoch;
   $('teacherIdentity').textContent=meta.teacher.repo+' / '+meta.teacher.revision.slice(0,12)+' / '+meta.teacher.role;
-  $('teacherMetrics').textContent=`Recorded teacher distillation. Validation KL ${d.initial.validation.kl.toFixed(4)} before training; ${d.final.validation.kl.toFixed(4)} selected. Teacher agreement measures imitation, not game success.`;
+  $('teacherMetrics').textContent=`${d.target_source||"Recorded Laya teacher distillation"}. Validation KL ${d.initial.validation.kl.toFixed(4)} before training; ${d.final.validation.kl.toFixed(4)} selected. Label agreement is separate from measured game success.`;
 }
 async function startIntegrated(){
   drawTeacherHistory();brain=new GradedBrainMap(safe(selectIntegratedCell));await brain.load(meta);await brain.loadSurfaces();

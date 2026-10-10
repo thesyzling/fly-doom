@@ -1,3 +1,5 @@
+> **Current retinal/sensorimotor workflow:** use `python -m flydoom.research_cycle --cycles 1`, then `python -m flydoom --candidate` to inspect the latest candidate. The champion registry is `runs/sensorimotor-learning/registry.json`; failed candidates never silently replace the approved model. See the [current workflow and measured limitations](../README.md#sensorimotor-research-cycle-october-10-2026). The guide below describes the retained legacy whole-brain LIF cycle, which has its own separate checkpoints and registry.
+
 # Automatic synaptic learning
 
 The project can now run a bounded **experience → candidate → evaluation → promotion** cycle without manual labeling. It changes magnitude gains on existing biological graph edges, while the six-action decoder and Laya Vision stay frozen. This implements a learning mechanism; it does not establish that the resulting policy is a competent Doom player or a biologically valid fly.

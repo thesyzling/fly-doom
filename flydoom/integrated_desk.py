@@ -2,6 +2,7 @@
 
 import argparse
 import base64
+import faulthandler
 from collections import deque
 from datetime import datetime
 import hashlib
@@ -37,6 +38,15 @@ class IntegratedSession(RetinalSession):
         self.receptors=json.loads((RESULT/'receptors.json').read_text())
         self.receptor_lookup={r['root_id']:i for i,r in enumerate(self.receptors)}
         self.outgoing=self.encoder.model.weights.T.tocsr()
+        # Reverse breadth-first search finds an actual shortest route to an
+        # output without discarding weak but structurally necessary relays.
+        self.next_output={self.visual_lookup[str(root)]:None for root in self.actor.root_ids}
+        queue=deque(self.next_output)
+        while queue:
+            target=queue.popleft();a,b=self.encoder.model.weights.indptr[target:target+2]
+            for source,weight in zip(self.encoder.model.weights.indices[a:b],self.encoder.model.weights.data[a:b]):
+                source=int(source)
+                if weight and source not in self.next_output:self.next_output[source]=target;queue.append(source)
         self.asset_lock=Lock();self.teacher_busy=False;self.record_cache=None
         self.map_data=self.build_map()
 
@@ -52,7 +62,7 @@ class IntegratedSession(RetinalSession):
         roles[[self.lookup[str(root)] for root in self.actor.root_ids]]=2
         return {'ids':[str(root) for root in self.full_ids], 'positions_f32':packed((positions-center)*1.7/extent,'<f4'),
                 'roles_u8':packed(roles,'u1'),'edges':[], 'center_um':center.tolist(),'extent_um':extent,
-                'visual_indices':self.visual_full_indices.tolist(), 'note':'Full anatomy; only the visual subcircuit is simulated in this mode'}
+                'visual_indices':self.visual_full_indices.tolist(), 'note':'Full anatomy; only the selected neural subcircuit is simulated in this mode'}
 
     def metadata(self):
         value=super().metadata()
@@ -61,6 +71,8 @@ class IntegratedSession(RetinalSession):
                      teacher={'repo':teacher['repo'],'revision':teacher['revision'],'role':'Offline distillation teacher; on-demand same-frame comparison'},
                      distillation=json.loads((self.checkpoint/'distillation.json').read_text()),
                      unified=True)
+        if self.report.get("aim_training"):
+            value["teacher"]["role"]="Inherited Laya teacher; current aiming correction uses training-only engine annotations"
         return value
 
     def new_run(self,seed):
@@ -78,6 +90,8 @@ class IntegratedSession(RetinalSession):
             if run is not None and run!=str(self.folder):raise ValueError('The requested run is no longer active')
             state=self.state(sequence)
             key=(str(self.folder),sequence)
+            if sequence==self.sequence and getattr(self,'latest_arrays',None) is not None:
+                return state,self.latest_arrays
             if self.record_cache is not None and self.record_cache[0]==key:return state,self.record_cache[1]
             if sequence:
                 path=self.folder/f'{sequence:04d}.npz'
@@ -120,7 +134,7 @@ class IntegratedSession(RetinalSession):
         value={'id':root,'label':self.label(root)['label'],'sequence':sequence,'annotation':row,'edges':[],
                'simulated':root in self.visual_lookup,'decoder':None}
         if root not in self.visual_lookup:
-            value['note']='Anatomical context only; this cell is outside the active visual circuit.'
+            value['note']='Anatomical context only; this cell is outside the active neural circuit.'
             return value
         i=self.visual_lookup[root];state=saved['delta'];weights=self.encoder.model.weights
         released=np.maximum(self.encoder.model.baseline+state,0)-np.maximum(self.encoder.model.baseline,0)
@@ -144,6 +158,17 @@ class IntegratedSession(RetinalSession):
         receptor=self.receptors[index]
         path=[receptor['root_id'],receptor['l1_root_id'],receptor['mi1_root_id']]
         start=self.visual_lookup[path[-1]];targets={self.visual_lookup[str(root)] for root in self.actor.root_ids}
+        if hasattr(self,'next_output') and start in self.next_output:
+            current=start
+            while self.next_output[current] is not None:
+                current=self.next_output[current];path.append(str(self.encoder.ids[current]))
+            edges=[]
+            for source,target in zip(path,path[1:]):
+                s,t=self.visual_lookup[source],self.visual_lookup[target]
+                edges.append({'source':self.label(source),'target':self.label(target),
+                              'weight':float(self.encoder.model.weights[t,s]),
+                              'contacts':int(self.contacts[self.lookup[target],self.lookup[source]])})
+            return path,edges
         queue=deque([(start,0)]);parent={start:None};found=None
         while queue and len(parent)<4000:
             i,depth=queue.popleft()
@@ -175,6 +200,9 @@ class IntegratedSession(RetinalSession):
         path,edges=self.retinal_path(index)
         return {'sequence':sequence,'selected_index':index,'selected':self.receptors[index],
                 'input_drive':float(contrast[index]),'path':path,'edges':edges,
+                'input_kind':'Raw optical contrast before any fitted adaptation',
+                'adaptation_state':float(saved['input_adaptation'][index]) if 'input_adaptation' in saved else None,
+                'adaptation_gain':getattr(self.encoder,'adaptation_gain',0.),
                 'nodes':[{**self.label(root),'state':float(saved['delta'][self.visual_lookup[root]])} for root in path],
                 'reaches_decoder':path[-1] in self.decoder_lookup,
                 'samples':[{'index':int(i),'uv':self.encoder.uv[i].tolist(),'drive':float(contrast[i])} for i in np.flatnonzero(self.encoder.visible)],
@@ -209,7 +237,7 @@ class IntegratedSession(RetinalSession):
 
     def compare_teacher(self,sequence,run=None):
         with self.condition:
-            if self.busy or not self.paused or self.teacher_busy:raise ValueError('Pause and wait for the current operation first')
+            if self.busy or not self.paused or self.teacher_busy or getattr(self,'restarting',False):raise ValueError('Pause and wait for the current operation first')
             state,saved=self.record(sequence,run);frame=saved['frame'].copy();folder=self.folder
             path=folder/f'teacher-{sequence:04d}.json'
             if path.exists():return json.loads(path.read_text())
@@ -233,8 +261,18 @@ def handler(session):
         def do_GET(self):
             p=urlsplit(self.path);q=parse_qs(p.query)
             try:
-                scripts={'/map-core.js':'live/map.js','/map-anatomy.js':'laboratory/map.js','/integrated.js':'retinal/integrated.js'}
+                scripts={'/map-core.js':'live/map.js','/map-anatomy.js':'laboratory/map.js','/integrated.js':'retinal/integrated.js','/research.js':'retinal/research.js'}
                 if p.path in scripts:return self.send((Path(__file__).parent/'web'/scripts[p.path]).read_bytes(),mime='text/javascript')
+                if p.path=='/api/research':
+                    from flydoom.research_registry import ROOT,state
+                    value=state();progress=ROOT/'progress.json'
+                    value['progress']=json.loads(progress.read_text()) if progress.exists() else None
+                    value['active_checkpoint']=str(session.checkpoint.resolve())
+                    value['active_report']=session.report if session.report.get('schema')=='sensorimotor_v2' else None
+                    if value['latest']:
+                        value['latest_report']=json.loads((Path(value['latest']['path'])/'report.json').read_text())
+                        value['latest_timing']=json.loads((Path(value['latest']['path'])/'timing.json').read_text())
+                    return self.send(value)
                 if p.path=='/api/map':return self.send(session.map_data)
                 if p.path=='/api/anatomy':return self.send(named_anatomy.surfaces(session.map_data))
                 if p.path=='/api/skeleton':return self.send(session.skeleton(q['id'][0]))
@@ -259,6 +297,11 @@ class DeskServer(ThreadingHTTPServer):
     # Windows SO_REUSEADDR can silently bind beside an old server.
     allow_reuse_address=False
 
+    def handle_error(self,request,client_address):
+        diagnostics=getattr(self,'diagnostics',None)
+        if diagnostics:diagnostics.exception('http_request_failed',client=str(client_address))
+        super().handle_error(request,client_address)
+
     def server_bind(self):
         if hasattr(socket,'SO_EXCLUSIVEADDRUSE'):
             self.socket.setsockopt(socket.SOL_SOCKET,socket.SO_EXCLUSIVEADDRUSE,1)
@@ -267,11 +310,21 @@ class DeskServer(ThreadingHTTPServer):
 
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--checkpoint',type=Path,default=Path('runs/retinal-control-v1'))
+    parser.add_argument('--checkpoint',type=Path)
+    parser.add_argument('--candidate',action='store_true',help='Explicitly inspect the latest candidate, including a rejected one')
+    parser.add_argument('--resume-live',type=Path,help='Restore verified decoder weights into a fresh episode')
     parser.add_argument('--port',type=int,help='Explicit port; otherwise select a free port from 8782 through 8791')
     parser.add_argument('--no-browser',action='store_true')
     args=parser.parse_args(argv)
-    server=None;session=None
+    from flydoom.research_registry import champion,state
+    if args.candidate and args.checkpoint:parser.error('Choose --candidate or --checkpoint')
+    if args.candidate:
+        latest=state()['latest']
+        if latest is None:parser.error('No completed sensorimotor candidate exists')
+        args.checkpoint=Path(latest['path'])
+        if digest(args.checkpoint/'report.json','sha256')!=latest['report_sha256']:raise ValueError('Candidate report changed')
+    elif args.checkpoint is None:args.checkpoint=champion()
+    server=None;session=None;fault_log=None
     for port in ([args.port] if args.port is not None else range(8782,8792)):
         try:
             server=DeskServer(('127.0.0.1',port),handler(None));break
@@ -281,14 +334,25 @@ def main(argv=None):
     if server is None:raise OSError('No available local desk port between 8782 and 8791')
     try:
         session=IntegratedSession(args.checkpoint,Path('runs')/datetime.now().strftime('integrated-live-%Y%m%d-%H%M%S-%f'))
+        server.diagnostics=session.diagnostics
+        fault_log=(session.output/'native-fault.log').open('a',encoding='utf-8')
+        faulthandler.enable(file=fault_log)
+        if args.resume_live:session.resume_live(args.resume_live)
         server.RequestHandlerClass=handler(session)
         print(f'Integrated Fly Doom desk: http://127.0.0.1:{server.server_port}',flush=True)
+        print(f'Live diagnostics: {session.diagnostics.path}',flush=True)
         if not args.no_browser:webbrowser.open(f'http://127.0.0.1:{server.server_port}')
         server.serve_forever(poll_interval=.2)
     except KeyboardInterrupt:pass
+    except Exception:
+        if session:session.diagnostics.exception('server_failed')
+        raise
     finally:
         server.server_close()
-        if session:session.close()
+        try:
+            if session:session.close()
+        finally:
+            if fault_log:faulthandler.disable();fault_log.close()
 
 
 if __name__=='__main__':main()
