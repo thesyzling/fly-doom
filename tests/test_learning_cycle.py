@@ -196,10 +196,23 @@ def test_ui_worker_launch_is_bounded_and_cancel_targets_only_its_cycle(tmp_path,
     monkeypatch.setattr(learning_job.subprocess, "Popen", lambda argv, **kwargs: calls.append(argv) or process)
     job = learning_job.LearningJob()
     assert job.start()["started"]
-    assert calls[0][-2:] == ["--cycles", "1"]
+    assert calls[0][-2:] == ["-m", "flydoom.synaptic_consensus"]
     with pytest.raises(ValueError): job.start()
     folder = tmp_path / "cycle-1"; folder.mkdir()
     cycle.atomic_json(tmp_path / "latest.json", {"status": "running", "output": str(folder)})
     assert job.cancel()["cancellation_requested"]
     assert (folder / "cancel.request").exists()
     assert job.state()["selected_checkpoint"] == {"path": "unchanged"}
+
+
+@pytest.mark.parametrize("folder_name", ["cycle-previous", "consensus-new"])
+def test_live_run_protects_evaluation_seeds_from_both_protocols(tmp_path, monkeypatch, folder_name):
+    from flydoom.laboratory import Laboratory
+    monkeypatch.chdir(tmp_path)
+    cycle.atomic_json(tmp_path / "runs/learning" / folder_name / "plan.json",
+                      {"splits": {"train": [{"seed": 9}], "validation": [{"seed": 10}],
+                                  "gate": [{"seed": 11}], "test": [{"seed": 12}]}})
+    lab = Laboratory.__new__(Laboratory); lab.protected = set()
+    for seed in (10, 11, 12):
+        with pytest.raises(ValueError, match="learning evaluation"):
+            lab.new_run(seed)

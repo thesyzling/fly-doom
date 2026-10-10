@@ -213,7 +213,7 @@ class Laboratory(Workbench):
         if type(seed) is not int or not 0 <= seed < 2**32 or type(max_decisions) is not int or not 1 <= max_decisions <= 75 or episodes != 1 or alpha != 0:
             raise ValueError("Require one episode, 1..75 decisions, a uint32 seed and alpha zero")
         if seed in self.protected: raise ValueError("Reserved future benchmark seed")
-        for plan in Path("runs/learning").glob("cycle-*/plan.json"):
+        for plan in Path("runs/learning").glob("*/plan.json"):
             value = json.loads(plan.read_text())
             if any(seed == row["seed"] for split in ("gate", "test", "validation") for row in value["splits"][split]):
                 raise ValueError("This seed belongs to a learning evaluation split")

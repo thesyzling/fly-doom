@@ -688,3 +688,40 @@ The research desk renders 78 named neuropils from a pinned fafbseg geometry arch
 The implemented automatic mechanism is reward-assisted self-imitation with pinned Laya targets. It is not unlimited online optimization, full biological learning, validated retinotopy, proven navigation or a completed Doom-training objective. See [automatic learning](AUTOMATIC_LEARNING.md) for the exact procedure, controls, budgets and interpretation limits.
 
 The final enhanced Edge check reopened the complete 13-state recording after application restart, inspected the RAM-evicted first decision, filtered named regions, found and rendered a nonzero directed biological path, loaded its real morphology, and sequentially streamed 32 actual descending-neuron skeletons. All 808,641 rendered coordinate vertices (including repeated triangle/line endpoints) fit inside the default fitted viewport. No browser exceptions, WebGL errors or mobile horizontal overflow occurred. The completed learning panel displayed all four split/task comparisons and the rejected-promotion result. Evidence: `runs/learning-enhanced-browser.json`, `learning-streamed-brain.png`, `learning-controls.png`, and `learning-controls-mobile.png`.
+
+## Sparse consensus and rehearsal follow-up (October 10, 2026)
+
+Experiment `runs/learning/consensus-20261010-032204-430975` reserved six training, four validation, six gate and six final-test openings before collecting any labels. It collected 96 fresh training images and 64 validation images, and reused 16 old training-prefix frames from eight episodes. Two validation images duplicate training data: all 64 remain in recurrent replay, but only 62 contribute to validation loss. No external dataset samples entered this experiment.
+
+Six episode-specific local eligibility gradients produced 4,653 supported edges; a fixed strength ranking retained 4,096. Support requires at least three nonzero episode gradients and 75% sign agreement. Two predeclared gain steps were evaluated through the full hard-spike graph. The objective assigns 75% weight to the mean fresh-episode KL and 25% to the mean rehearsal-episode KL, with a 0.005 maximum per-episode regression. The decoder, teacher and encoder were fixed.
+
+| Training selection measurement | Parent | Step 0.000025 | Step 0.00005 |
+|---|---:|---:|---:|
+| Fresh training KL | 0.34489998 | 0.34487689 | 0.34499776 |
+| Rehearsal KL | 0.14256971 | 0.14292081 | 0.14292081 |
+| Weighted episode objective | 0.29431744 | 0.29438787 | 0.29447852 |
+| Accepted update | Baseline | No | No |
+
+The first proposal slightly improved fresh-data imitation but regressed on old training examples. Both weighted objectives were worse, so the selected candidate retained the parent's gains exactly: **zero new edge changes**. This differs from the prior dense-search experiment, where training improvement led to a candidate that subsequently failed validation. It does not show that sparse consensus has improved gameplay or solved forgetting; it shows that the additional selection criterion rejected these two updates.
+
+The raw Laya teacher chose FORWARD most often (53/96 fresh frames) and never chose BACKWARD as its top action in training. Positive distance feedback reinforced two executed backward actions, but neither became a top-target backward example. These observations do not establish learned retreat. Data augmentation must address teaching quality and useful scenarios as well as sample count.
+
+The complete paired gate and final test each used six new starts, with a maximum of 32 four-tic decisions per model/start. Both selected policies played every start independently:
+
+| Final measurement | Parent | Selected candidate |
+|---|---:|---:|
+| Fresh training KL, 96 frames | 0.34489998 | 0.34489998 |
+| Validation KL, 62 scored frames | 0.35251428 | 0.35251428 |
+| Rehearsal KL, 16 frames | 0.14256971 | 0.14256971 |
+| Gate target kills, 6 starts | 2 | 2 |
+| Gate mean native return | -98.8333 | -98.8333 |
+| Final test target kills, 6 starts | 3 | 3 |
+| Final test mean native return | -42.1667 | -42.1667 |
+
+All per-task return, kill and distance-progress differences were zero. Fourteen of the 24 policy/start evaluations were truncated. **No promotion occurred:** nonregression passed, but gameplay improvement was absent. This is a negative experiment, not a new learned policy. The parent still contains the earlier 13,867 changes relative to the original untrained graph; this experiment added zero. Reconstructed matrix SHA256: `6a5c1cc1212d99dd78d719a51d5b48fc4d6a446086defd82d494e342d9489829`.
+
+The independent audit reloaded the saved graph and verified source/plan/frame/checkpoint identities, unselected weights, signs and recorded argmax decisions. An additional check regenerated the sparse direction from the six saved episode gradients, verified the 4,096-edge cap, reconstructed the selected gains from the parent and accepted step, and verified all rehearsal source hashes. Both audits passed. They do not repeat every neural/game rollout. Evidence: the experiment's `report.json`, `benchmarks.json`, `gate.json`, `audit.json`, `consensus-audit.json`, `diagnosis.json`, and `eligibility.npz`. Disk caches were preserved.
+
+Focused verification passed 51 Python tests covering the new consensus logic, strict external action mapping, existing synaptic/movement mechanics, worker control and evaluation-seed protection for both run formats. JavaScript syntax and executable legacy/sparse-history chart checks passed. The dataset audit verified downloaded source hashes, action order, contiguous frame indices and 35 Hz timestamps for two pinned GameWAM episodes. See [dataset findings](RESEARCH.md#dataset-audit-and-sparse-follow-up-october-10-2026).
+
+The restarted local desk served the completed status, zero accepted new changes, 4,096 selected proposal edges and all four split/task benchmark rows through its HTTP APIs. The served JavaScript includes rehearsal measurements; `ui-api-check.json` records the checks. This verifies API integration and chart logic, not a new browser visual inspection. The desk was left paused on the approved checkpoint. The post-run device check reported 0 MiB GPU memory and 0% utilization.

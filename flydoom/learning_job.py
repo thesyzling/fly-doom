@@ -27,7 +27,7 @@ class LearningJob:
         if self.state()["worker_active"] or (ROOT / "cycle.lock").exists(): raise ValueError("A learning cycle is already active")
         ROOT.mkdir(parents=True, exist_ok=True)
         with (ROOT / "worker.log").open("a", encoding="utf-8") as log:
-            self.process = subprocess.Popen([sys.executable, "-u", "-m", "flydoom.learning_cycle", "--cycles", "1"],
+            self.process = subprocess.Popen([sys.executable, "-u", "-m", "flydoom.synaptic_consensus"],
                 stdout=log, stderr=log, env={**os.environ, "PYTHONIOENCODING": "utf-8"},
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
         return {"started": True, "pid": self.process.pid}

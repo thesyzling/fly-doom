@@ -107,7 +107,7 @@ function chart(report){
   const x=i=>50+i/(report.history.length-1)*525,y=v=>175-(v-low)/(high-low||1)*145;
   for(let i=0;i<4;i++){const v=low+(high-low)*i/3;add('line',{x1:50,x2:580,y1:y(v),y2:y(v),stroke:'#dce3d7'});add('text',{x:2,y:y(v)+4,fill:'#74816d','font-size':10,'font-family':'Consolas'},fmt(v,3))}
   add('polyline',{points:events.map(e=>`${x(e.evaluation)},${y(e.kl)}`).join(' '),fill:'none',stroke:'#739780','stroke-width':1.5});
-  for(const e of events){const dot=add('circle',{cx:x(e.evaluation),cy:y(e.kl),r:3.3,fill:e.accepted?'#315d41':'#b3bfa9'});const title=document.createElementNS(NS,'title');title.textContent=`Candidate ${e.evaluation}: KL ${fmt(e.kl,6)}; gains ${e.gains.map(v=>fmt(v,3)).join(', ')}`;dot.append(title)}
+  for(const e of events){const dot=add('circle',{cx:x(e.evaluation),cy:y(e.kl),r:3.3,fill:e.accepted?'#315d41':'#b3bfa9'});const title=document.createElementNS(NS,'title');title.textContent=`Candidate ${e.evaluation}: KL ${fmt(e.kl,6)}; ${e.method||'group search'}${e.gains?'; gains '+e.gains.map(v=>fmt(v,3)).join(', '):''}${e.objective!==undefined?'; rehearsal objective '+fmt(e.objective,6):''}`;dot.append(title)}
   add('text',{x:50,y:204,fill:'#74816d','font-size':10,'font-family':'Consolas'},'Base graph');add('text',{x:450,y:204,fill:'#74816d','font-size':10,'font-family':'Consolas'},'Synaptic candidates →');
 }
 async function training(){
@@ -166,14 +166,15 @@ async function learningPoll(){
     $('learnStart').disabled=active||!ended;$('learnCancel').disabled=!active;
     $('learnActivate').disabled=active||!ended;$('learnRollback').disabled=active||!ended||!state.can_rollback;$('archiveOpen').disabled=!ended;
     const phases=['reserve','collect','encoder_ablation','optimize','validation','gate','test','completed'];
-    const equivalent={baseline:'collect',eligibility:'optimize',recurrent_optimization:'optimize'};
+    const equivalent={baseline:'encoder_ablation',eligibility:'optimize',recurrent_optimization:'optimize'};
+    $('learningStages').children[2].textContent='Baseline / encoder';
     const index=phases.indexOf(equivalent[state.phase]||state.phase);
     [...$('learningStages').children].forEach((node,i)=>{node.classList.toggle('current',i===index);node.classList.toggle('done',i<index)});
     if(state.error)$('learningDetail').textContent=`Cycle stopped: ${state.error}. The previous champion remains selected.`;
     else if(state.status==='completed')$('learningDetail').textContent=state.promoted?'The candidate passed the promotion gate and is registered. Load approved checkpoint to inspect it live.':'The cycle completed. Its candidate did not pass promotion; the previous champion remains active. Measurements and candidate weights are preserved.';
     else if(active)$('learningDetail').textContent=`Working on ${state.phase.replaceAll('_',' ')}. ${state.experience?`Collected ${state.experience.train.frames} training and ${state.experience.validation.frames} validation frames.`:''} Candidate training runs in a separate process.`;
     if(state.output&&['completed','validation','gate','test'].includes(state.phase)){
-      const evidence=await api('/api/learning/benchmarks');$('benchmarkRows').replaceChildren(...evidence.rows.map(r=>row([r.split+' / '+r.task,r.pairs,fmt(r.return.champion,1)+' / '+fmt(r.return.candidate,1),fmt(r.return.delta,1)+' ['+r.return.paired_95_interval.map(v=>fmt(v,1)).join(', ')+']',fmt(r.kills.champion,2)+' / '+fmt(r.kills.candidate,2)])));const report=await api('/api/learning/report');$('learningReport').textContent=JSON.stringify({output:state.output,encoder_mix:report.encoder_mix,changed_from_champion:report.changed_from_champion,initial_train_kl:report.initial?.train.kl,final_train_kl:report.final?.train.kl,initial_validation_kl:report.initial?.validation.kl,final_validation_kl:report.final?.validation.kl,gate:state.gate||report.gate,experience:report.experience},null,2);
+      const evidence=await api('/api/learning/benchmarks');$('benchmarkRows').replaceChildren(...evidence.rows.map(r=>row([r.split+' / '+r.task,r.pairs,fmt(r.return.champion,1)+' / '+fmt(r.return.candidate,1),fmt(r.return.delta,1)+' ['+r.return.paired_95_interval.map(v=>fmt(v,1)).join(', ')+']',fmt(r.kills.champion,2)+' / '+fmt(r.kills.candidate,2)])));const report=await api('/api/learning/report');$('learningReport').textContent=JSON.stringify({output:state.output,method:report.parameterization,consensus:report.consensus,encoder_mix:report.encoder_mix,changed_from_champion:report.changed_from_champion,initial_train_kl:report.initial?.train.kl,final_train_kl:report.final?.train.kl,initial_rehearsal_kl:report.initial?.rehearsal?.kl,final_rehearsal_kl:report.final?.rehearsal?.kl,initial_validation_kl:report.initial?.validation.kl,final_validation_kl:report.final?.validation.kl,gate:state.gate||report.gate,experience:report.experience},null,2);
     }
   }catch(e){$('learningState').textContent='Status unavailable: '+e.message}finally{setTimeout(learningPoll,3000)}
 }

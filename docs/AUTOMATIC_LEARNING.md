@@ -74,9 +74,28 @@ The path search uses at most four hops, 48 strongest outgoing edges per cell and
 
 ## Files for developers
 
+### Sparse consensus follow-up
+
+The desk's **Start one learning cycle** button now runs one bounded sparse-consensus experiment:
+
+```powershell
+.\.venv\Scripts\python.exe -m flydoom.synaptic_consensus
+```
+
+This collects up to 96 fresh training and 64 validation frames, rehearses 16 old training frames, and evaluates six paired starts each for the gate and final test (up to 32 decisions per model/start). A maximum of 4,096 existing edges can change from the active checkpoint. At least three training episodes must support an edge, with at least 75% sign agreement. Two predeclared gain steps compete using equal-episode training/rehearsal losses; validation never selects a candidate. The adapter, Laya weights and decoder remain fixed. The earlier `flydoom.learning_cycle` CLI retains its original dense perturbation algorithm for explicit reproduction.
+
+New runs use `runs/learning/consensus-*/` and the same registry, cancellation, independent checkpoint audit and UI measurement APIs. **Candidate measurements** includes consensus support, rehearsal KL and actual changed-edge count. Live run creation protects held-out seeds from both cycle formats. The UI chart accepts sparse-search histories without group-gain snapshots.
+
+`python -m flydoom.cycle_diagnosis <completed-cycle>` writes per-episode before/after KL and target-action coverage from verified frames and saved predictions. `python -m flydoom.external_data_audit runs/data-research-20261010` checks downloaded source hashes, action semantics and sample chronology. Neither command trains on external data. See [research findings](RESEARCH.md#dataset-audit-and-sparse-follow-up-october-10-2026).
+
+### Module responsibilities
+
 | File | Responsibility |
 |---|---|
 | `flydoom/learning_cycle.py` | Reservation, collection, candidate optimization, exact replay, gate, registry and CLI loop |
+| `flydoom/synaptic_consensus.py` | Sparse episode-consistent proposals, old-training rehearsal and a bounded follow-up experiment |
+| `flydoom/cycle_diagnosis.py` | Per-episode saved-prediction diagnosis and teacher-action coverage |
+| `flydoom/external_data_audit.py` | Strict external action compatibility and source-sample audit; no training ingestion |
 | `flydoom/learning_curriculum.py` | Deterministic native game setup, distance diagnostics and reward-assisted targets |
 | `flydoom/learning_features.py` | Versioned contrast/motion adapter and episode reset |
 | `flydoom/learning_job.py` | Local UI worker supervision and cancellation requests |
