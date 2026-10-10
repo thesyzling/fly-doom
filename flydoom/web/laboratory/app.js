@@ -30,7 +30,7 @@ function paintPolicy(){
   $('readoutGrid').replaceChildren();s.student_spikes.forEach((spikes,i)=>{const b=el('button',`S${String(i).padStart(2,'0')} · ${spikes}`);b.style.background=`rgba(77,135,101,${.07+.55*spikes/8})`;b.title=`Cell ${i}: ${spikes}/8 internal spikes`;b.onclick=safe(()=>readout(i));$('readoutGrid').append(b)});
 }
 async function paintSnapshot(snapshot){
-  lab.shown=snapshot;paintPolicy();const generation=lab.generation,sequence=snapshot.sequence;
+  lab.shown=snapshot;paintPolicy();paintVisual(snapshot);const generation=lab.generation,sequence=snapshot.sequence;
   await lab.map.update(snapshot);
   const signals=await api('/api/signals?sequence='+sequence);
   if(lab.generation!==generation||lab.shown.sequence!==sequence)return;
@@ -40,6 +40,33 @@ async function paintSnapshot(snapshot){
   $('activeFly').replaceChildren(...signals.active_cells.map(c=>{const td=cellTd(c.id,c.label);td.append(el('small',c.id));td.lastChild.className='secondary';return row([td,c.spikes,fmt(c.voltage_mv,3)])}));
   $('mapNote').textContent=`Decision ${snapshot.decision} · ${num(signals.active_cell_count)} spiking cells · arrows are graph edges, not axon paths`;
   if(lab.selected)await inspectCell();
+}
+const visualColors=['#79562b','#297368','#4168aa','#9b4560','#a56c16','#63549a','#6b783b','#30404c'];
+let visualCellType='L1';
+function visualCell(cell){
+  visualCellType=cell.cell_type;
+  $('visualCellTitle').textContent=`${cell.cell_type} / ${cell.root_id}`;
+  $('visualCellNote').textContent=`External drive ${cell.input_drive.toExponential(3)} · all incoming products ${cell.total_synaptic_drive.toExponential(3)} · action contribution: none (shadow mode)`;
+  $('visualEdges').replaceChildren(...cell.edges.map(e=>{const name=el('td',e.source_type);name.append(el('small',e.source));name.lastChild.className='secondary';return row([name,e.weight.toExponential(3),e.presynaptic_release.toExponential(3),e.contribution.toExponential(3)])}));
+}
+function paintVisual(snapshot){
+  const v=snapshot.visual_observer;
+  $('visualContent').hidden=!v;
+  $('visualStatus').textContent=v?'OBSERVING / NO MOTOR OUTPUT':'No visual observer recorded for this decision';
+  if(!v)return;
+  $('retinaNote').textContent=`${v.visible_receptors} / ${v.identity.mapped_receptors} mapped receptors inside the provisional 90° camera. Outside-view receptors receive neutral gray. Amber = bright; blue = dark. Not calibrated fly vision.`;
+  $('visualTiming').textContent=`Decision interval ${fmt(v.interval_ms,1)} ms · visual simulation total ${fmt(v.simulated_ms,1)} ms · observer + recording ${fmt(v.observer_wall_ms,1)} ms wall time. ${v.interval_ms?(v.observer_meets_interval_budget?'Observer fits this interval budget.':'Observer is slower than the game interval.'):'Initial frame; no integration yet.'} This excludes motor-policy computation. Physiology validation remains incomplete.`;
+  const image=new Image();image.onload=()=>{if(lab.shown!==snapshot)return;const c=$('retinaCanvas'),ctx=c.getContext('2d');ctx.drawImage(image,0,0,c.width,c.height);ctx.fillStyle='#12241c55';ctx.fillRect(0,0,c.width,c.height);for(const p of v.input_samples){ctx.beginPath();ctx.arc(p.uv[0]*c.width,p.uv[1]*c.height,2.5,0,2*Math.PI);ctx.fillStyle=p.contrast>=0?'#ffbd72':'#75c3ff';ctx.fill()}};image.src=snapshot.frame;
+  const svg=$('visualTrace');svg.replaceChildren();const ns='http://www.w3.org/2000/svg';
+  const add=(tag,attrs,text)=>{const e=document.createElementNS(ns,tag);for(const [k,val]of Object.entries(attrs))e.setAttribute(k,val);if(text)e.textContent=text;svg.append(e);return e};
+  const kinds=Object.keys(v.trace[0]?.values||{}),max=Math.max(1e-6,...v.trace.flatMap(t=>Object.values(t.values).map(Math.abs)));
+  add('line',{x1:65,y1:130,x2:620,y2:130,stroke:'#b8c8bd'});
+  add('text',{x:8,y:22,fill:'#62746c','font-size':11},'+'+max.toExponential(1));add('text',{x:8,y:240,fill:'#62746c','font-size':11},'-'+max.toExponential(1));
+  add('text',{x:65,y:263,fill:'#62746c','font-size':11},'0 ms');add('text',{x:550,y:263,fill:'#62746c','font-size':11},fmt(v.interval_ms,1)+' ms');
+  kinds.forEach((kind,i)=>add('polyline',{points:v.trace.map(t=>`${65+555*t.time_ms/Math.max(v.interval_ms,1)},${130-110*t.values[kind]/max}`).join(' '),fill:'none',stroke:visualColors[i],'stroke-width':2}));
+  $('visualLegend').replaceChildren(...kinds.map((kind,i)=>{const span=el('span',kind);span.style.color=visualColors[i];return span}));
+  $('visualCells').replaceChildren(...v.cells.map(c=>{const td=el('td'),b=el('button',c.cell_type);b.onclick=()=>visualCell(c);td.append(b,el('small',c.root_id));td.lastChild.className='secondary';return row([td,c.delta.toExponential(3),fmt(c.tau_ms,2)])}));
+  visualCell(v.cells.find(c=>c.cell_type===visualCellType)||v.cells[0]);
 }
 async function readout(i){
   const s=lab.shown,detail=await api(`/api/neuron?id=student:${i}&sequence=${s.sequence}`);

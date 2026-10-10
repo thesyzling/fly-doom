@@ -98,6 +98,10 @@ class LabCatalog(MovementCatalog):
 class LabSession(Session):
     def __init__(self, *args):
         super().__init__(*args)
+        self.visual_observer = getattr(self.catalog, 'visual_observer', None)
+        if self.visual_observer is not None:
+            self.visual_observer.reset()
+            self.report['visual_observer'] = self.visual_observer.identity
         self.report.update(connectome_weights_trained=self.catalog.plastic_report["connectome_weights_trained"],
                            synaptic_checkpoint_sha256=self.catalog.plastic_report["synapses_sha256"],
                            trained_graph_sha256=self.catalog.plastic_report["trained_weights_sha256"])
@@ -115,17 +119,23 @@ class LabSession(Session):
 
     def control(self, command):
         with self.condition:
-            if command == "pause" and self.phase in {"completed", "stopped", "error"}:
+            if command in {"pause", "stop"} and self.phase in {"completed", "stopped", "error"}:
                 self.paused = True
                 return
         return super().control(command)
 
     def publish(self, *args, **kwargs):
+        visual = None
+        if self.visual_observer is not None:
+            effect = kwargs.get('effect', args[6] if len(args) > 6 else None)
+            visual = self.visual_observer.observe(args[0], int(effect['game_tics']) if effect else 0,
+                                                  self.sequence+1, self.output/'visual')
         # Hold the same reentrant condition until all per-decision telemetry exists.
         with self.condition:
             super().publish(*args, **kwargs)
             self.samples[-1]["current"] = self.controller.network.current.copy()
             self.samples[-1]["refractory"] = self.controller.network.refractory.copy()
+            self.samples[-1]['visual_observer'] = visual
             self.archive.save(self.samples[-1])
 
     def sample(self, sequence=None):
@@ -204,7 +214,9 @@ class Laboratory(Workbench):
             if command == "rollback": return self.learning.rollback()
             if command == "activate":
                 if self.learning.state()["locked"]: raise ValueError("Wait for the learning cycle to finish")
+                observer = getattr(self.catalog, 'visual_observer', None)
                 self.catalog, self.identity = load_catalog(Path(champion()["path"]))
+                self.catalog.visual_observer = observer
                 self.map_data = None
                 return self.new_run()
             raise ValueError("Unknown learning command")
@@ -229,6 +241,8 @@ class Laboratory(Workbench):
                       morphology_examples=self.catalog.examples,
                       snapshot_limit=8, anatomy_source="78 named fafbseg neuropils in FlyWire space / v783 skeletons",
                       encoder_mix=getattr(self.catalog.controller, "encoder_mix", 0.))
+        observer = getattr(self.catalog, 'visual_observer', None)
+        result['visual_observer'] = observer.identity if observer else {'enabled': False}
         return result
 
     def signals(self, sequence):
@@ -322,10 +336,21 @@ def load_catalog(folder):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--synapses", type=Path)
-    parser.add_argument("--port", type=int, default=8770)
+    parser.add_argument("--port", type=int)
     parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument('--visual-checkpoint', type=Path, default=Path('runs/retinal-feedback-v1'))
+    parser.add_argument('--no-visual-observer', action='store_true', help='Run only the existing motor policy')
+    parser.add_argument('--retinal-control', action='store_true', help='Use the trained T4/T5 decoder with live reward feedback')
+    parser.add_argument('--legacy-lif', action='store_true', help='Open the retained whole-brain LIF pilot')
     args = parser.parse_args()
+    if args.retinal_control or (not args.legacy_lif and args.synapses is None and not args.no_visual_observer):
+        from flydoom.integrated_desk import main as retinal_main
+        return retinal_main((['--port',str(args.port)] if args.port is not None else [])+(['--no-browser'] if args.no_browser else []))
+    if args.port is None:args.port=8770
     catalog, identity = load_catalog(args.synapses or Path(champion()["path"]))
+    if not args.no_visual_observer and (args.visual_checkpoint/'report.json').exists():
+        from flydoom.visual_observer import VisualObserver
+        catalog.visual_observer = VisualObserver(args.visual_checkpoint, catalog.ids, catalog.rows)
     work = Laboratory(catalog, identity, Path("runs") / datetime.now().strftime("synaptic-live-%Y%m%d-%H%M%S-%f"))
     server = ThreadingHTTPServer(("127.0.0.1", args.port), handler(work))
     try:

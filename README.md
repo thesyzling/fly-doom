@@ -2,7 +2,141 @@
 
 A research project to train a model based on the real fruit fly connectome to control Doom.
 
-**Status: bounded automatic synaptic learning and persistent neural replay are implemented.** A separate cycle collects Laya Vision targets and measured movement feedback, trains gains on existing fly connections, runs paired independent evaluations and promotes only an accepted candidate. Live play uses a fixed approved checkpoint. This is a working research pipeline, not a claim that Doom training is complete. See the [automatic learning guide](docs/AUTOMATIC_LEARNING.md), [interface research](docs/LAB_DESIGN_RESEARCH.md), and [validation record](docs/VALIDATION.md).
+**Status: the integrated visual-control research desk is working end to end.** The retained Laya Vision model, real anatomical map, trained visual circuit, six-action Doom decoder, live reward feedback and recorded-decision inspection now share one workspace. This is a completed software integration, not a claim of biological validation or strong Doom performance.
+
+## Start the complete workspace
+
+```powershell
+.\.venv\Scripts\python.exe -m flydoom
+```
+
+The command verifies the trained checkpoint and opens the browser at the local address printed in the terminal. It selects an available port from 8782 through 8791, so an older server cannot silently receive the new page's requests. Existing model, anatomy and research caches are retained. No additional packages or downloads are required for the default map and controller.
+
+1. Press **Single step** to follow one image through the visual circuit, neural action decoder and game reward. **Run** plays continuously; **Pause** stops after the in-flight decision. **End run** ends the episode session.
+2. Inspect the **full brain beside Doom**: 139,255 anatomical cells and 78 named regions. The 21,988 simulated visual cells show signed graded states (amber positive, blue negative); the remaining gray cells are anatomical context. Drag to rotate, shift-drag to pan, scroll to zoom, or use **Fit brain** / **Expand**.
+3. Click a dot on the **eye input** to follow its provisional R1-6 -> L1 -> Mi1 assignment and an existing directed route toward a selected T4/T5 decoder cell. Click a path node or decision-table cell to inspect exact root IDs, existing contact counts, model weights, time constants and signed contributions. **Load selected branches** displays real morphology, reusing retained caches where available; an uncached cell requires the public morphology service.
+4. Pause and press **Compare this input with Laya**. The retained model processes that exact recorded image and shows all six probabilities beside the neural policy. It does not override actions or train weights during comparison. Model startup may take some time; the worker closes after comparison, while model files remain cached. The distillation chart displays the recorded training experiment rather than fabricated live training points.
+5. **Learn from reward** enables stochastic neural action selection and actual decoder updates. Disable it while paused for frozen argmax evaluation. The feedback panel shows reward, update magnitude and selected-action probability before/after the update. Click any **Recorded decision** to replay its image, brain state, input path and pre-update weights together.
+6. **New episode** retains this process's learned decoder. Restarting restores the verified experiment checkpoint. Records and live candidate weights remain under `runs/integrated-live-*/run-*/`; a live candidate is not automatically promoted to the evaluated checkpoint.
+
+`python -m flydoom.laboratory` and `python -m flydoom.retinal_play` also open this integrated desk. Use `python -m flydoom.laboratory --legacy-lif --port 8781` for the retained whole-brain LIF pilot. Explicit `--synapses` and `--no-visual-observer` options retain the legacy workflow. Use `--no-browser` to print the address without opening a tab.
+
+## Control and evidence
+
+Only 256 selected real T4/T5 cell states enter the **engineered six-action decoder**. There is no raw-image bypass, engine-position shortcut or Laya action override. Laya provided offline training targets and is available for same-frame inspection. A full-brain descending-neuron motor pathway is still absent; displaying the whole anatomical brain does not mean that all its neurons are simulated in this mode.
+
+The retained `runs/retinal-control-v1` experiment used 165 Laya training images and 96 separate validation images, followed by **519 reward updates across 16 training episodes**. Decoder validation changed from 2/4 to 3/4 kills, with mean return -99.5 to -98.25. Proposed T4/T5 biological gain changes regressed on validation and were rejected. Live reward updates change the decoder, not biological synapses or fitted time constants.
+
+Frozen test results remain **1/4 kills** for the connected circuit, **0/4** disconnected, and **1/4** always-ATTACK, with mean returns -258, -240 and -220. These results do not establish gameplay superiority. Retinal assignments and the physiological waveform fit remain provisional.
+
+The integrated interface passed a complete 23-decision live episode with 23 nonzero reward updates and one kill (seed 74001, return -4). Every saved selected-action logit was reconstructed from its exact neural features and pre-update weights. This is a software integration check, not a new held-out benchmark. Real Laya comparison, anatomical morphology, recorded-decision replay, desktop layout and a 390-pixel mobile layout were also checked. Evidence is retained under `runs/integrated-desk-check/`.
+
+```powershell
+.\.venv\Scripts\python.exe -m flydoom.retinal_control_audit
+# Reproduce training in a fresh folder, preserving the completed experiment.
+.\.venv\Scripts\python.exe -m flydoom.retinal_train --output runs/retinal-control-repeat
+# Open that completed experiment in the same integrated desk.
+.\.venv\Scripts\python.exe -m flydoom --checkpoint runs/retinal-control-repeat
+```
+
+The audit verifies artifact identities, exact neuron IDs, disjoint teaching frames/seeds, neural image replay, disconnected-circuit behavior, frozen test actions and real reward episode replay. Live records retain the frame, full visual state, exact decoder features, before/after weights and reward. See [closed-loop evidence](docs/RESEARCH.md#retinal-closed-loop-control-and-reward-october-10-2026) and the [earlier automatic learning guide](docs/AUTOMATIC_LEARNING.md).
+
+## Earlier whole-brain pilot with shadow retinal observation
+
+The research desk now feeds the **same Doom input frame** into a separate 21,988-cell graded visual circuit, including measured C2/C3 feedback connections. Start a fresh server to load it:
+
+```powershell
+.\.venv\Scripts\python.exe -m flydoom.laboratory --legacy-lif --port 8781
+```
+
+Open **http://127.0.0.1:8781**. Use **Single step**, then scroll to **From pixels to retinal feedback**. The panel shows sampled receptor positions over the input image, population traces, exact cell IDs, time constants and signed incoming weight ? release products. Click a cell type to inspect its contributions. **Run/Pause** and the decision timeline also control this panel; old decisions load their saved observations. The initial paused frame has no integrated response yet.
+
+**This is shadow observation, not a new motor controller.** The approved whole-brain LIF policy still selects actions using the decoder previously trained with Laya Vision targets. Laya is not running online. The graded visual output is not yet wired into that decoder. The provisional 90-degree camera, gray reference and pixel-to-drive scaling are engineering assumptions. Outside-view receptors receive neutral gray. A policy frame is held for the actual action duration; intermediate game frames are not sampled.
+
+This CPU path supports interactive inspection but is **not wall-clock real-time gameplay**: the panel reports observer time against simulated game time, excluding the slower whole-brain policy. Every observation is retained under the live run's `visual/` directory; compressed recordings contain the exact input frame, root IDs, input contrasts and neural states. Existing caches and recordings are preserved. `--no-visual-observer` runs the previous motor-only interface. A different research checkpoint can be selected with `--visual-checkpoint`.
+
+The C2/C3 fit restores 1,422 cells and 44,571 existing structural edges while preserving parent edges. At a matched integration step, previously seen low-luminance NRMSE changes only **0.5344 ? 0.5314**; the 0.50 waveform target remains unmet. Fitted C2/C3 time constants hit the lower bound and are not identified biological values. No independent confirmation or motor-policy promotion is claimed.
+
+```powershell
+.\.venv\Scripts\python.exe -m flydoom.retinal_feedback --output runs/retinal-feedback-repeat
+.\.venv\Scripts\python.exe -m flydoom.retinal_feedback_audit
+```
+
+The audit command checks the default `runs/retinal-feedback-v1` artifact. Reproduction uses a new output directory. Next steps are contrast/luminance adaptation, independent physiological confirmation, an explicit graded-to-whole-brain boundary, decoder retraining and paired gameplay/latency tests. See [research evidence](docs/RESEARCH.md#anatomical-feedback-and-synchronized-observation-october-10-2026).
+
+## Visual integration experiment
+
+The preceding follow-up trains **R1-6/L1/L2 model time constants against measured temporal responses**:
+
+```powershell
+Start-Process .\runs\timing-training-v1\index.html
+```
+
+Select L1/L2, light/dark, and training/reserved recordings to compare real ASAP2f response traces against the original and fitted circuit. The fit uses four high-luminance population-mean traces; four low-luminance traces are reserved for evaluation without refitting their amplitude or timing. The source download now uses the authors' pinned GitHub measurement files, independent of the blocked Dryad archive. The eight required data/protocol files total about 185 KB.
+
+These are **conditional model time constants**, not uniquely measured intrinsic membrane constants. The observation model includes sensor-lag sensitivity and the author's trailing time-bin averaging. Other cell types retain 20 ms; synaptic weights retain the preceding polarity fit. The report exposes remaining waveform error and promotion gates. This research checkpoint does not replace live Doom.
+
+```powershell
+.\.venv\Scripts\python.exe -m flydoom.timing_sources
+.\.venv\Scripts\python.exe -m flydoom.timing_training --output runs/timing-training-repeat
+.\.venv\Scripts\python.exe -m flydoom.timing_audit --output runs/timing-training-repeat
+```
+
+Use a new output name for each repeat. Existing SciPy reads the author MATLAB files and performs bounded optimization; no MATLAB runtime or additional package is needed. CPU runs and retained data are sufficient. See [temporal-calibration evidence](docs/RESEARCH.md#measured-temporal-calibration-october-10-2026).
+
+The preceding follow-up fits **existing Mi4 input gains to qualitative ON/OFF response priors**:
+
+```powershell
+Start-Process .\runs\polarity-training-v1\index.html
+```
+
+The offline report compares initial/fitted population traces and all 17 learned type-pair multipliers. Training-label matches change from 12/13 to 13/13; withheld T4/T5 label matches remain 8/8. These counts are qualitative checks, **not measured physiological accuracy or Doom performance**. There are 13,324 changed existing edges, with signs and structural zeros retained. Time constants remain fixed; the live Doom model has not changed. The intended raw physiology archive could not be downloaded (HTTP 403), so no measured-response fitting is claimed. See [the evidence and limits](docs/RESEARCH.md#qualitative-polarity-fitting-october-10-2026).
+
+Reproduce in a new directory without overwriting the saved run:
+
+```powershell
+.\.venv\Scripts\python.exe -m flydoom.physiology_sources
+.\.venv\Scripts\python.exe -m flydoom.polarity_training --output runs/polarity-training-repeat
+.\.venv\Scripts\python.exe -m flydoom.polarity_audit --output runs/polarity-training-repeat
+```
+
+The source command downloads only the small pinned author reference and license. `--recordings` additionally attempts the 180 MB Dryad archive and verifies its published checksum; the archive is not needed for the qualitative pilot. Cached files are retained. Training uses existing NumPy/SciPy dependencies and runs on CPU.
+
+The preceding experiment tests **provisional receptor input through a graded visual subcircuit**:
+
+```powershell
+Start-Process .\runs\graded-retina-v1\index.html
+```
+
+Select a covered column, stimulus condition and recorded time to follow one R1-6 -> L1 -> Mi1 path, including exact neuron IDs, contact counts and model weights. The comparison contains nine conditions and a baseline-preserving L1 release intervention. This is an untrained 20,566-cell visual prototype, not a replacement for the live whole-brain Doom model. Anatomical assignments and physiological parameters still require validation. See [the follow-up findings](docs/RESEARCH.md#retinal-path-and-graded-dynamics-follow-up-october-10-2026).
+
+Offline reproduction using retained data:
+
+```powershell
+.\.venv\Scripts\python.exe -m flydoom.retinal_mapping
+.\.venv\Scripts\python.exe -m flydoom.retinal_experiment
+.\.venv\Scripts\python.exe -m flydoom.retinal_audit
+```
+
+The first mapping run needs `python -m flydoom.retinal_mapping --fetch` to obtain the public coordinate transform for the disjoint sample points. Existing raw sources and skeletons are reused. No additional Python packages are required beyond the preceding research dependencies.
+
+The first eye-mapping audit and eight visual-path diagnostics are saved separately from the trained Doom policy. Open the interactive notebook:
+
+```powershell
+Start-Process .\runs\visual-integration-v1\index.html
+```
+
+Select an optical column to inspect its candidate neuron and matching evidence. Select a stimulus, population and signal to inspect recorded voltage/spike responses. This report runs offline without a server. The initial audit supports 694 of 778 Mi1 correspondences geometrically; these are **provisional**, not segmentation-verified photoreceptor mappings. No new Doom checkpoint was trained or promoted. See [the experiment and remaining gates](docs/RESEARCH.md#first-eye-mapping-and-visual-path-experiment-october-10-2026).
+
+Reproduce using the retained data:
+
+```powershell
+.\.venv\Scripts\python.exe -m flydoom.eye_mapping
+.\.venv\Scripts\python.exe -m flydoom.visual_probe
+.\.venv\Scripts\python.exe -m flydoom.visual_audit
+```
+
+On a fresh installation, install the additional packages in `requirements-research.lock.txt`, run `python -m flydoom.eye_sources`, then `python -m flydoom.eye_mapping --fetch` once. Downloads are pinned or recorded with checksums and retained. The spatial probe deliberately bypasses the retina at Mi1; it is a transmission diagnostic, not a physiological-validation result. Author optical x/z axes are not calibrated Doom camera axes.
 
 ## Current research desk
 

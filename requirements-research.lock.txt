@@ -1,0 +1,8 @@
+# Additional packages for importing the pinned eye-map research data.
+# Install alongside requirements.lock.txt; no R runtime is required.
+rdata==1.1.0
+pandas==3.0.6
+python-dateutil==2.9.0.post0
+six==1.17.0
+tzdata==2026.5
+xarray==2026.9.0
