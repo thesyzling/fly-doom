@@ -21,7 +21,7 @@ def desk(tmp_path):
     session.condition=Condition();session.asset_lock=Lock()
     session.folder=tmp_path;session.sequence=1;session.seed=74000
     session.phase='ready';session.paused=True;session.busy=False;session.teacher_busy=False
-    session.learning=True;session.error=None;session.record_cache=None
+    session.learning=True;session.error=None;session.record_cache=None;session.report={}
     ids=np.arange(720575940600010660,720575940600010664,dtype=np.uint64)
     session.full_ids=ids;session.lookup={str(root):i for i,root in enumerate(ids)}
     session.visual_lookup=session.lookup.copy();session.visual_full_indices=np.arange(4)
@@ -109,6 +109,24 @@ def test_laya_failure_releases_busy_flag(desk,monkeypatch):
     assert not desk.teacher_busy
     desk.busy=True
     with pytest.raises(ValueError,match='Pause'):desk.compare_teacher(1)
+
+
+def test_taught_checkpoint_comparison_uses_its_canonical_teacher_mapping(desk,monkeypatch):
+    desk.report={'laya_training':{'target_source':'Laya'}};desk.scenario='basic'
+    desk.latest['probabilities']=[1/8]*8;instances=[]
+    class Teacher:
+        def __init__(self,log,scenario):
+            assert scenario=='basic'
+            self.metadata={'teacher_actions':['MOVE_LEFT','MOVE_RIGHT','ATTACK']};self.closed=False;instances.append(self)
+        def predict(self,frame):return {'probabilities':[0,.2,.3,.5,0,0,0,0],'frame_sha256':sha256(frame.tobytes()).hexdigest()}
+        def close(self):self.closed=True
+    monkeypatch.setattr('flydoom.laya_brain_teacher.LayaBrainTeacher',Teacher)
+    def wrong(*a):pytest.fail('Legacy six-option teacher must not be used for this checkpoint')
+    monkeypatch.setattr('flydoom.movement_teacher.MovementTeacher',wrong)
+    before=desk.actor.weights.copy();result=desk.compare_teacher(1)
+    assert len(result['teacher']['probabilities'])==8 and not result['policy_overridden']
+    np.testing.assert_array_equal(desk.actor.weights,before)
+    assert instances[0].closed and not desk.teacher_busy
 
 
 def test_skeleton_loading_preserves_existing_caches(desk,tmp_path,monkeypatch):

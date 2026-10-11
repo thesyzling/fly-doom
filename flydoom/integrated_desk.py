@@ -71,8 +71,8 @@ class IntegratedSession(RetinalSession):
                      teacher={'repo':teacher['repo'],'revision':teacher['revision'],'role':'Offline distillation teacher; on-demand same-frame comparison'},
                      distillation=json.loads((self.checkpoint/'distillation.json').read_text()),
                      unified=True)
-        if self.report.get("aim_training"):
-            value["teacher"]["role"]="Inherited Laya teacher; current aiming correction uses training-only engine annotations"
+        if self.report.get("aim_training") or self.report.get("bridge_training"):
+            value["teacher"]["role"]="Inherited Laya teacher; current task training uses training-only engine annotations"
         return value
 
     def new_run(self,seed):
@@ -245,7 +245,11 @@ class IntegratedSession(RetinalSession):
         teacher=None
         try:
             from flydoom.movement_teacher import MovementTeacher
-            teacher=MovementTeacher(folder/'teacher.log');answer=teacher.predict(frame)
+            if self.report.get('laya_training'):
+                from flydoom.laya_brain_teacher import LayaBrainTeacher
+                teacher=LayaBrainTeacher(folder/'teacher.log',getattr(self,'scenario','basic'))
+            else:teacher=MovementTeacher(folder/'teacher.log')
+            answer=teacher.predict(frame)
             value={'sequence':sequence,'run':str(folder),'teacher':answer,'identity':teacher.metadata,
                    'student_probabilities':state['probabilities'],'policy_overridden':False,
                    'note':'Same-frame Laya comparison only; no action or weight update performed.'}
@@ -261,13 +265,18 @@ def handler(session):
         def do_GET(self):
             p=urlsplit(self.path);q=parse_qs(p.query)
             try:
-                scripts={'/map-core.js':'live/map.js','/map-anatomy.js':'laboratory/map.js','/integrated.js':'retinal/integrated.js','/research.js':'retinal/research.js'}
+                scripts={'/map-core.js':'live/map.js','/map-anatomy.js':'laboratory/map.js','/integrated.js':'retinal/integrated.js','/research.js':'retinal/research.js','/adaptive.js':'retinal/adaptive.js'}
                 if p.path in scripts:return self.send((Path(__file__).parent/'web'/scripts[p.path]).read_bytes(),mime='text/javascript')
+                if p.path=='/api/adaptive':return self.send(session.adaptive_status() if hasattr(session,'adaptive_status') else {'enabled':False})
+                if p.path=='/api/reward-episode':
+                    from flydoom.reward_evidence import episode_evidence
+                    return self.send(episode_evidence(session.checkpoint, int(q['index'][0])))
                 if p.path=='/api/research':
                     from flydoom.research_registry import ROOT,state
                     value=state();progress=ROOT/'progress.json'
                     value['progress']=json.loads(progress.read_text()) if progress.exists() else None
                     value['active_checkpoint']=str(session.checkpoint.resolve())
+                    value['adaptive']=session.report.get('schema')=='adaptive_sensorimotor_v1'
                     value['active_report']=session.report if session.report.get('schema')=='sensorimotor_v2' else None
                     if value['latest']:
                         value['latest_report']=json.loads((Path(value['latest']['path'])/'report.json').read_text())
@@ -283,6 +292,15 @@ def handler(session):
                 return super().do_GET()
             except (ValueError,KeyError,OSError) as error:self.send({'error':str(error)},400)
         def do_POST(self):
+            if self.path=='/api/adaptive':
+                if self.headers.get('Origin') not in (None,f'http://127.0.0.1:{self.server.server_port}'):return self.send({'error':'Use local origin'},403)
+                try:
+                    size=int(self.headers.get('Content-Length','0'))
+                    if self.headers.get('Content-Type')!='application/json' or not 0<size<=256:raise ValueError('Invalid request')
+                    if not hasattr(session,'start_learning'):raise ValueError('Launch with --adaptive to learn relay gains')
+                    body=json.loads(self.rfile.read(size));session.start_learning(body['pairs'],body['scenario'])
+                    return self.send({'ok':True})
+                except (ValueError,KeyError,TypeError,OSError,RuntimeError) as error:return self.send({'error':str(error)},400)
             if self.path!='/api/teacher':return super().do_POST()
             if self.headers.get('Origin') not in (None,f'http://127.0.0.1:{self.server.server_port}'):return self.send({'error':'Use local origin'},403)
             try:
@@ -312,18 +330,41 @@ def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--checkpoint',type=Path)
     parser.add_argument('--candidate',action='store_true',help='Explicitly inspect the latest candidate, including a rejected one')
+    parser.add_argument('--adaptive',action='store_true',help='Experimental eight-action controller and live paired relay learning')
+    parser.add_argument('--laya-student',action='store_true',help='Latest Laya-taught eye/brain policy; Laya is absent from live action selection')
+    parser.add_argument('--reward-student',action='store_true',help='Latest Laya-initialized brain after teacher-free reinforcement learning')
+    parser.add_argument('--scenario',choices=('basic','predict_position','deadly_corridor'),default='basic')
+    parser.add_argument('--resume-relay',type=Path,help='Resume verified biological relay gains from a relay-learner.json file')
     parser.add_argument('--resume-live',type=Path,help='Restore verified decoder weights into a fresh episode')
     parser.add_argument('--port',type=int,help='Explicit port; otherwise select a free port from 8782 through 8791')
     parser.add_argument('--no-browser',action='store_true')
     args=parser.parse_args(argv)
     from flydoom.research_registry import champion,state
+    if args.laya_student and args.reward_student:parser.error('Choose --laya-student or --reward-student')
+    if args.laya_student or args.reward_student:args.adaptive=True
     if args.candidate and args.checkpoint:parser.error('Choose --candidate or --checkpoint')
-    if args.candidate:
+    if args.adaptive and args.candidate:parser.error('Choose --adaptive or --candidate')
+    if args.resume_relay and not args.adaptive:parser.error('--resume-relay requires --adaptive')
+    if args.adaptive:
+        if args.resume_live:parser.error('Use --resume-relay for adaptive learning')
+        if args.checkpoint is None:
+            pointer=Path('runs/reward-student/latest.json' if args.reward_student else 'runs/laya-brain-learning/latest.json' if args.laya_student else 'runs/adaptive-research/latest.json')
+            if not pointer.exists():parser.error('Run python -m flydoom.reward_training_v2 first' if args.reward_student else 'Run python -m flydoom.laya_brain_training first' if args.laya_student else 'Run python -m flydoom.adaptive_experiment first')
+            latest=json.loads(pointer.read_text());args.checkpoint=Path(latest['path'])
+            if digest(args.checkpoint/'report.json','sha256')!=latest['sha256']:raise ValueError('Adaptive report changed')
+    elif args.candidate:
         latest=state()['latest']
         if latest is None:parser.error('No completed sensorimotor candidate exists')
         args.checkpoint=Path(latest['path'])
         if digest(args.checkpoint/'report.json','sha256')!=latest['report_sha256']:raise ValueError('Candidate report changed')
     elif args.checkpoint is None:args.checkpoint=champion()
+    review=args.checkpoint/'review.json'
+    if review.exists() and json.loads(review.read_text()).get('eligible_for_use') is False:
+        parser.error('This experiment was superseded after a rehearsal-cache error. Run python -m flydoom.reward_training_v2 and inspect its completed checkpoint.')
+    if json.loads((args.checkpoint/'report.json').read_text()).get('schema')=='adaptive_sensorimotor_v1':
+        args.adaptive=True
+        if args.resume_live:parser.error('Use --resume-relay for adaptive learning')
+    if args.scenario!='basic' and not args.adaptive:parser.error('--scenario requires an adaptive checkpoint')
     server=None;session=None;fault_log=None
     for port in ([args.port] if args.port is not None else range(8782,8792)):
         try:
@@ -333,7 +374,12 @@ def main(argv=None):
                 parser.error(f'Cannot open port {args.port}: {error}. Close the previous server or omit --port to select a free port.')
     if server is None:raise OSError('No available local desk port between 8782 and 8791')
     try:
-        session=IntegratedSession(args.checkpoint,Path('runs')/datetime.now().strftime('integrated-live-%Y%m%d-%H%M%S-%f'))
+        output=Path('runs')/datetime.now().strftime('integrated-live-%Y%m%d-%H%M%S-%f')
+        if args.adaptive:
+            from flydoom.adaptive_live import AdaptiveSession
+            session=AdaptiveSession(args.checkpoint,output,args.scenario)
+            if args.resume_relay:session.resume_relay(args.resume_relay)
+        else:session=IntegratedSession(args.checkpoint,output)
         server.diagnostics=session.diagnostics
         fault_log=(session.output/'native-fault.log').open('a',encoding='utf-8')
         faulthandler.enable(file=fault_log)

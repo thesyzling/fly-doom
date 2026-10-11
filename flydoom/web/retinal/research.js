@@ -3,6 +3,7 @@
 // Reported evidence belongs to a frozen cycle; live decoder updates are separate.
 async function researchStatus(){
  const response=await api('/api/research'),latest=response.latest_report,active=response.active_report;
+ if(response.adaptive){$('researchStatus').closest('section').hidden=true;return}
  const host=$('researchStatus');if(!host)return;
  const progress=response.progress;
  host.textContent=progress?`${progress.status.toUpperCase()} / stage ${progress.stage||'—'} of 5`:'No sensorimotor cycle yet';
@@ -10,16 +11,18 @@ async function researchStatus(){
  $('activeModel').textContent=response.active_checkpoint===response.champion.path?'Approved checkpoint':'Experimental candidate / promotion gate not passed';
  $('activeModel').dataset.experimental=String(response.active_checkpoint!==response.champion.path);
  const stages=$('researchStages');stages.replaceChildren();
- const names=['Existing-edge learning','Measured timing','Descending pathway','Independent benchmark','Persistent learning'];
- names.forEach((name,i)=>{const row=el('article');row.append(el('span',`0${i+1}`),el('strong',name),el('small',latest?.phases_completed?.includes(i+1)?'Completed':progress?.stage===i+1?'Running':'Pending'));stages.append(row)});
+ const relayCycle=progress?.folder?.includes('bridge-')||latest?.bridge_training;
+ const names=relayCycle?['Causal training data','Visual replay verification','Relay weights & timing','Independent benchmark','Verified checkpoint']:['Existing-edge learning','Measured timing','Descending pathway','Independent benchmark','Persistent learning'];
+ names.forEach((name,i)=>{const row=el('article');row.append(el('span',`0${i+1}`),el('strong',name),el('small',progress?.status==='running'?(i+1<progress.stage?'Completed':i+1===progress.stage?'Running':'Pending'):latest?.phases_completed?.includes(i+1)?'Completed':'Pending'));stages.append(row)});
  $('researchPaths').textContent=`Active: ${response.active_checkpoint}\nChampion: ${response.champion.path}\nLatest candidate: ${response.latest?.path||'none'}`;
  if(!latest){$('researchSummary').textContent=progress?.message||'Run one bounded cycle from the command below.';return}
  const timing=latest.timing,fit=latest.distillation;
  $('researchSummary').textContent=`Latest cycle: ${latest.plasticity.changed_edges.toLocaleString()} existing edges changed across ${latest.plasticity.changed_groups} groups. ${latest.neurons.toLocaleString()} simulated cells, ${latest.readout_cells} descending outputs. Teacher validation KL ${fit.final.validation.kl.toFixed(4)}, agreement ${(fit.final.validation.agreement*100).toFixed(1)}%. Timing development NRMSE ${timing.development_low_luminance.nrmse.toFixed(4)}; waveform threshold ${timing.waveform_threshold_passed?'passed':'failed'}. ${latest.promotion.accepted?'Candidate promoted.':'Candidate rejected by the game gate; champion retained.'}`;
  if(latest.aim_training)$('researchSummary').textContent=`Aiming correction: ${latest.aim_training.training_frames} training frames, selected round ${latest.aim_training.selected_round}. Training-only engine annotations supervise the action decoder; live inputs remain descending neuron states. Biological weights and timing are inherited unchanged. ${latest.promotion.accepted?'Basic-scenario gate passed.':'Basic-scenario gate failed; champion retained.'}`;
+ if(latest.bridge_training)$('researchSummary').textContent=`Joint relay training: ${latest.bridge_training.training_frames} training frames; ${latest.plasticity.changed_edges.toLocaleString()} existing relay connections and ${latest.plasticity.changed_tau_cells} cell time constants changed. Visual flash responses are unchanged. Relay timing is task-fitted, not a physiological measurement. Fresh target-validation agreement ${(fit.final.validation.agreement*100).toFixed(1)}%. ${latest.promotion.accepted?'Basic-scenario gate passed.':'Gate failed; approved checkpoint retained.'}`;
  const table=$('researchResults');table.replaceChildren();
  for(const [policy,tasks] of Object.entries(latest.test_by_task))for(const [task,result] of Object.entries(tasks)){
-  const row=el('tr');[policy==='parent'&&latest.aim_training?'approved baseline':policy.replaceAll('_',' '),task.replaceAll('_',' '),result.episodes,result.kills,`${(result.kill_episode_rate*100).toFixed(1)}%`,result.mean_return.toFixed(1)].forEach(v=>row.append(el('td',String(v))));table.append(row)
+  const row=el('tr');[policy==='parent'&&(latest.aim_training||latest.bridge_training)?'approved baseline':policy==='fixed_bridge'?'decoder-only ablation':policy.replaceAll('_',' '),task.replaceAll('_',' '),result.episodes,result.kills,`${(result.kill_episode_rate*100).toFixed(1)}%`,result.mean_return.toFixed(1)].forEach(v=>row.append(el('td',String(v))));table.append(row)
  }
  $('researchScope').textContent=latest.scope+' The low-luminance recordings were used in earlier development; they are not new biological validation. Test results do not select the champion.';
  $('researchGate').textContent=Object.entries(latest.promotion.by_task).map(([name,g])=>`${name}: gate return Δ ${g.return_delta.toFixed(1)}, kills Δ ${g.kill_delta}`).join(' / ');
@@ -36,14 +39,15 @@ async function researchStatus(){
   }
  }
  const changed=latest.plasticity.groups.map((name,i)=>({name,gain:latest.plasticity.gains[i]})).sort((a,b)=>Math.abs(b.gain-1)-Math.abs(a.gain-1)).slice(0,12);
- fitDetails.append(el('p','Largest type-pair gain changes: '+changed.map(g=>`${g.name} × ${g.gain.toFixed(3)}`).join('; ')));
+ fitDetails.append(el('p',(latest.bridge_training?'Largest relay transmission / tau multipliers: ':'Largest type-pair gain changes: ')+changed.map(g=>`${g.name} × ${g.gain.toFixed(3)}`).join('; ')));
  $('researchActive').textContent=active?'The neural map and game above use the sensorimotor candidate shown in Active.':'The game above uses the approved checkpoint. Launch with --candidate to inspect the latest candidate.';
  if(active){$('readoutLabel').textContent='descending decoder inputs';$('graphRoute').textContent='R1–6 · visual relays · descending cells';
   $('decisionCaption').textContent='Largest signed descending-cell contributions to the chosen action. Each root ID belongs to the anatomical graph; the Doom readout is engineered.';
   $('controlMethod').textContent='Only selected descending-cell states enter the action decoder. The path follows existing FAFB contacts through visual and central relays. Laya supplies image-based teaching targets; no raw pixels or engine positions enter the decoder.';
   $('trainingMethod').textContent='Bounded existing-edge gains and population timing are trained between episodes. Live reward updates the engineered decoder only. A saved learner can be resumed explicitly; automatic cycles retain the champion unless their paired gate passes.';
   $('evidenceScope').textContent=active.scope;
-  if(active.aim_training){$('controlMethod').textContent='Only descending-cell states enter the action decoder. The inherited Laya-trained circuit is retained. Aiming correction uses engine target annotations during training only; live inference has no access to those labels.';$('trainingMethod').textContent='Frozen evaluation is the default. Explore & learn from reward samples exploratory actions and updates a separate live decoder. Recorded game outcomes, not agreement with Laya, select the aiming correction.'}
+  if(active.aim_training||active.bridge_training){$('controlMethod').textContent='Only descending-cell states enter the action decoder. The inherited Laya-trained circuit is retained. Aiming correction uses engine target annotations during training only; live inference has no access to those labels.';$('trainingMethod').textContent='Frozen evaluation is the default. Explore & learn from reward samples exploratory actions and updates a separate live decoder. Recorded game outcomes, not agreement with Laya, select the aiming correction.'}
+  if(active.bridge_training){$('trainingMethod').textContent='Existing connections into added relay/descending cells and their time constants were task-trained alongside the decoder. Visual physiology is inherited unchanged and still lacks validation. Engine annotations are training supervision only. Live play freezes this graph; optional reward learning changes only the decoder.'}
   if(!$('population').querySelector('option[value="Descending"]')){const option=el('option','Descending');option.value='Descending';$('population').prepend(option);$('population').value='Descending'}
  }
 }

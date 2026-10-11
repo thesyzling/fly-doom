@@ -6,3 +6,6 @@
 .session-status{display:flex;gap:18px;flex-wrap:wrap;padding:10px 14px;background:#e4e9df;border-left:3px solid #637568;font:11px/1.6 var(--mono)}#activeModel[data-experimental="true"]{color:#97521e}.session-status span{overflow-wrap:anywhere}
 
 .episode-status{margin:14px 0;padding:16px 20px;border:1px solid #a7b9a1;border-left:4px solid var(--green);background:#e4eddf}.episode-status[hidden]{display:none}.episode-status strong{font-size:16px}.episode-status p{margin-top:5px;font-size:12px;overflow-wrap:anywhere}.episode-status[data-kind="error"]{border-color:#b46a47;background:#f5dfd2}
+
+.adaptive-panel{margin:18px 0;padding:22px;border:1px solid #c7d1c0;background:#f1f3ed}.adaptive-panel input{width:64px}.adaptive-panel pre{white-space:pre-wrap;overflow-wrap:anywhere}.adaptive-panel p{overflow-wrap:anywhere}.adaptive-panel .research-stages{grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}.adaptive-panel .research-stages strong{overflow-wrap:anywhere}.adaptive-panel[hidden]{display:none}
+.controls label[hidden]{display:none}

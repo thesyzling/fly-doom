@@ -97,9 +97,12 @@ function drawTeacherHistory(){
   svgElement(selected,'title',{},`Selected epoch ${d.selected_epoch}, validation KL ${d.final.validation.kl.toFixed(6)}`);
   svgElement(svg,'text',{x:45,y:180,fill:'#637568','font-size':11},`Epoch 0 to ${end} / validation KL (lower is better)`);
   $('trainingChartTitle').textContent=d.target_source?'Aiming correction / training history':'Measured distillation history';
+  if(meta.laya_training)$('trainingChartTitle').textContent='Laya-supervised readout / after relay fitting';
+  if(meta.reward_training)$('trainingChartTitle').textContent='Inherited Laya initialization / before reward learning';
   $('fitEpoch').textContent='SELECTED EPOCH '+d.selected_epoch;
   $('teacherIdentity').textContent=meta.teacher.repo+' / '+meta.teacher.revision.slice(0,12)+' / '+meta.teacher.role;
   $('teacherMetrics').textContent=`${d.target_source||"Recorded Laya teacher distillation"}. Validation KL ${d.initial.validation.kl.toFixed(4)} before training; ${d.final.validation.kl.toFixed(4)} selected. Label agreement is separate from measured game success.`;
+  if(meta.reward_training)$('teacherMetrics').textContent+=' These are parent teaching metrics, not post-RL measurements. Reward-learning results appear in Training evidence.';
 }
 async function startIntegrated(){
   drawTeacherHistory();brain=new GradedBrainMap(safe(selectIntegratedCell));await brain.load(meta);await brain.loadSurfaces();
@@ -113,7 +116,7 @@ async function startIntegrated(){
   $('compareTeacher').onclick=safe(async()=>{
     if(teacherRequest||!shown)return;const snapshot=shown;teacherRequest=true;$('compareTeacher').disabled=true;$('teacherStatus').textContent='Loading retained Laya weights and comparing this exact input...';
     try{const value=await api('/api/teacher',{sequence:snapshot.sequence,run:snapshot.run});if(shown!==snapshot)return;
-      $('teacherBars').replaceChildren(...meta.actions.map((name,i)=>{const row=el('div');row.append(el('b',name),el('span','Laya '+(value.teacher.probabilities[i]*100).toFixed(1)+'%'),el('span','Neural '+(value.student_probabilities[i]*100).toFixed(1)+'%'));return row}));
+      $('teacherBars').replaceChildren(...meta.actions.map((name,i)=>{const row=el('div');row.append(el('b',name),el('span',i<value.teacher.probabilities.length?'Laya '+(value.teacher.probabilities[i]*100).toFixed(1)+'%':'Laya: unsupported action'),el('span','Neural '+(value.student_probabilities[i]*100).toFixed(1)+'%'));return row}));
       $('teacherStatus').textContent='Exact-frame comparison saved. Laya did not override the neural action.';
     }finally{teacherRequest=false;$('compareTeacher').disabled=false}
   });

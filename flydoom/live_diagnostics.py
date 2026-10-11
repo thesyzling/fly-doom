@@ -26,9 +26,9 @@ class LiveDiagnostics:
         self.logger.removeHandler(self.handler)
 
 
-def episode_end(game, effect, sequence, *, action_start_tick=None):
+def episode_end(game, effect, sequence, *, action_start_tick=None, decision_limit=75):
     """Report engine termination separately from the desk's recording limit."""
-    if not effect['episode_finished'] and sequence < 75:
+    if not effect['episode_finished'] and sequence < decision_limit:
         return None
     # Some terminal transitions reset the engine's reported clock to zero.
     # Count the actual observed tics from the pre-action clock instead.
@@ -47,4 +47,4 @@ def episode_end(game, effect, sequence, *, action_start_tick=None):
     else:
         reason = 'decision_limit'
     return {'reason': reason, 'game_tick': tick, 'timeout_tics': timeout,
-            'decision_limit': 75, 'episode_finished': effect['episode_finished']}
+            'decision_limit': decision_limit, 'episode_finished': effect['episode_finished']}

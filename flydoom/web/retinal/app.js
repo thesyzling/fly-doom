@@ -17,7 +17,8 @@ function episodeStatus(s){
  const reason=s.termination?.reason;
  const titles={target_eliminated:'Episode complete / target eliminated',time_limit:'Episode complete / time limit',decision_limit:'Episode complete / recording limit',player_dead:'Episode complete / player died',engine_finished:'Episode complete / engine finished'};
  $('episodeTitle').textContent=failed?'Live session error':terminal?(titles[reason]||'Episode complete'):'Run stopped';
- $('episodeDetail').textContent=failed?`The last saved decision is retained. ${s.error||'See diagnostics for details.'} Log: ${s.diagnostics_log||s.run}. Use Restart episode to try a fresh episode.`:terminal?`The game has ended normally; the server is still connected. ${s.termination?`Engine tick ${s.termination.game_tick}, time limit ${s.termination.timeout_tics} tics; recording limit ${s.termination.decision_limit} decisions. `:''}Use Restart episode to play again. Saved decisions and weights are retained.`:'Stopped by the user. Use Restart episode to play again; existing records are retained.';
+ const explanation=reason==='target_eliminated'?'Success: the target was hit. This single-target scenario ends immediately after a kill.':reason==='time_limit'?'The episode reached its engine time budget.':reason==='decision_limit'?'The episode reached its recorded decision budget.':'The game ended normally.';
+ $('episodeDetail').textContent=failed?`The last saved decision is retained. ${s.error||'See diagnostics for details.'} Log: ${s.diagnostics_log||s.run}. Use Restart episode to try a fresh episode.`:terminal?`${explanation} ${s.termination?`Stopped at tick ${s.termination.game_tick}; caps: ${s.termination.timeout_tics} engine tics and ${s.termination.decision_limit} decisions per episode. `:''}These are episode limits, not the total training budget. Offline training advances automatically to the next episode. This live test waits for Restart episode; saved decisions and weights are retained.`:'Stopped by the user. Use Restart episode to play again; existing records are retained.';
 }
 function safe(fn){return async(...args)=>{try{$('error').hidden=true;await fn(...args)}catch(e){$('error').hidden=false;$('error').textContent=e.message}}}
 function frame(){if(!shown)return;$('frame').src=outcome&&shown.after_frame?shown.after_frame:shown.frame;$('frameToggle').disabled=!shown.after_frame;$('frameToggle').textContent=!shown.after_frame?(shown.sequence?'Terminal input / no next frame':'Decision input'):outcome?'Show decision input':'Show action outcome'}
@@ -40,6 +41,9 @@ function paint(s){stopPlayback();shown=s;frame();playFrames(s);$('decision').tex
  $('reward').textContent=s.sequence?(s.reward>0?'+':'')+s.reward:'—';$('return').textContent=`Episode return ${s.return} / kills ${s.kills}`;
  const f=s.feedback;$('delta').textContent=f?f.weight_delta_l2.toExponential(3):'Frozen';$('updates').textContent=f?`${f.updates} reward updates this episode`:'No optimizer update at this decision';$('probability').textContent=f?`${(100*f.action_probability_before).toFixed(2)}% → ${(100*f.action_probability_after).toFixed(2)}%`:'—';
  $('feedbackNote').textContent=f?'Reward changed the live decoder after this action. The next decision uses its new weights. Biological graph gains stay fixed during live play. The saved experiment checkpoint remains intact.':'Game reward is recorded. Enable Learn from reward while paused to apply stochastic policy updates.';
+ if(meta.laya_training)$('feedbackNote').textContent='Laya teaching happened before this session. Play records rewards with the trained decoder fixed. Optional paired reward adaptation is a separate experiment below.';
+ else if(meta.adaptive)$('feedbackNote').textContent='The decoder stays fixed. Optional paired relay learning updates connection gains between episodes; the selected checkpoint remains intact.';
+ if(meta.reward_training)$('feedbackNote').textContent='Frozen test of a reward-trained brain. Recorded training episodes below show delayed reward credit. Run and Restart do not update weights.';
  $('timing').textContent=s.sequence&&s.timing?`Encoder ${s.encoding_ms.toFixed(1)} ms / archive ${s.timing.archive_ms.toFixed(1)} ms / ${s.timing.total_ms.toFixed(1)} ms before final JSON publication. ${s.action_frames?.length||0} genuine engine frames per action. Neural window remains 114.3 ms.`:s.sequence?`Encoder ${s.encoding_ms.toFixed(1)} ms / decision computation ${s.wall_ms.toFixed(1)} ms (excludes archive write). Neural clock ${s.neural_clock_ms.toFixed(1)} ms. State updates use a fixed 114.3 ms response window.`:'';
  $('runPath').textContent=s.run;trace();history(s.latest_sequence);paintIntegrated(s)
 }
@@ -70,7 +74,7 @@ async function poll(){
   const s=await api('/api/state'+(previous?'?since='+previous.sequence+'&run='+encodeURIComponent(previous.run):''));
   if(generation!==episodeGeneration)return;
   latestStatus=s;
-  $('testMode').textContent=s.learning?'EXPLORATION: actions are sampled and weights change':'FROZEN TEST: highest-probability action, weights fixed';
+  $('testMode').textContent=meta.reward_training?'FROZEN RL TEST: eye -> neural circuit -> action. No live teacher or weight updates.':meta.laya_training?'TEACHER-FREE PLAY: eye -> neural circuit -> action. Laya is used for training.':meta.adaptive?'NEURAL CONTROL: decoder fixed; see Relay learning for between-episode graph updates':s.learning?'EXPLORATION: actions are sampled and weights change':'FROZEN TEST: highest-probability action, weights fixed';
   if(connectionLost){connectionLost=false;$('error').hidden=true;}
   $('connection').textContent=s.busy?'COMPUTING':'CONNECTED';
   episodeStatus(s);

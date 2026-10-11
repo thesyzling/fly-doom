@@ -4,6 +4,91 @@ A research project to train a model based on the real fruit fly connectome to co
 
 **Status: the integrated visual-control research desk is working end to end.** The retained Laya Vision model, real anatomical map, trained visual circuit, six-action Doom decoder, live reward feedback and recorded-decision inspection now share one workspace. This is a completed software integration, not a claim of biological validation or strong Doom performance.
 
+## Laya teaches; the brain plays through its own eye
+
+To **play the already trained model**, run `python -m flydoom --reward-student`. Run and Restart do not train. A target hit ends the single-target scenario immediately, even before the time or decision cap. These are per-episode limits, not a limit on the whole training experiment. Offline training automatically advances through its episode budget.
+
+To **continue learned weights**, use the versioned continuation trainer:
+
+```powershell
+.\.venv\Scripts\python.exe -m flydoom.reward_training_v3
+```
+
+V3 starts from the latest verified reward checkpoint (or the Laya student if no reward checkpoint exists), retaining its neural graph, decoder and, when available, learned value baseline. It rebuilds original Laya TRAIN rehearsal drives against that continued graph. This is a warm start with fresh rollout randomness and a new relative trust anchor, not an exact resume of an interrupted optimizer process. Existing sources/checkpoints/caches are retained. The original v2 command below still starts a separate experiment from the Laya student.
+
+Training defaults to 150 decisions and 600 engine tics **per episode**, with eight antithetic relay-gradient directions instead of four. Target elimination still ends an episode early. Both learning policies receive the same budgets and start from the same continued parent. Frozen gate/final tests retain the original 75-decision / 300-tic limits and compare against that unchanged parent, so extra training time cannot inflate the reported test success rate. Longer-episode training returns are not directly comparable to earlier shorter-episode returns. These changes are hypotheses to evaluate, not a guarantee of better play. Flags `--training-decisions`, `--training-tics`, `--relay-directions`, `--batches`, `--episodes-per-batch` and `--test-episodes` make the bounded protocol explicit. Preparation progress identifies each reserved opening. No browser opens during training; use a second terminal for the live desk.
+
+The completed continuation pilot (`runs/reward-student/cycle-20261011-053524-608348`) added eight training episodes per learner in two batches. On the same sixteen fresh final episodes, joint continuation hit **10/16 (62.5%)**, while its unchanged parent and decoder-only continuation each hit **11/16 (68.75%)**. Mean returns were -97.625, -111.4375 and -75.125, respectively. The joint policy passed neither the 80% gate nor demonstrated a hit-rate improvement; it remains an experimental candidate. The earlier 4/8 result used different games and must not be read as a before/after improvement to 10/16. Verification: 363 software tests, 32 exact recorded training-decision replays, eight exact live-decision replays with teacher construction forbidden, and a real browser check including saved-credit inspection and a 390-pixel viewport. No caches or earlier checkpoints were removed.
+
+The next stage, **Laya initialization followed by game-reward learning**, is available as a bounded experiment:
+
+```powershell
+.\.venv\Scripts\python.exe -m flydoom.reward_training_v2
+# After the experiment finishes, inspect the resulting experimental brain:
+.\.venv\Scripts\python.exe -m flydoom --reward-student
+```
+
+The default experiment runs eight batches of four training episodes for each of two policies: joint relay/readout reinforcement learning and a decoder-only control. Both start from the same verified Laya student. Actions are sampled from each current neural policy during training. Actual scenario rewards supply discounted reward-to-go (`gamma=0.99`, reward scale `1/100`), so a later hit can credit earlier aiming decisions. A learned linear value baseline uses only descending-cell features. The decoder uses analytic policy gradients; relay gains use four random-direction finite-difference estimates of the same causal policy objective. This is an engineering learning rule, not a validated model of fly dopamine or synaptic plasticity.
+
+Retained **training-only** Laya targets are rehearsed, with bounded policy drift and teacher-loss checks to limit forgetting. These constraints are checked on training data; they do not guarantee preserved performance on unseen games. Anatomy, connection signs, visual rows and time constants remain fixed. Updates occur between batches; weights are fixed within each episode. Native images still reach the policy only through the eye and anatomical neural circuit. No teacher inference occurs in reward training or student evaluation.
+
+Each policy receives the same reserved training openings and budget. The unchanged Laya student, joint learner and decoder-only learner are then compared on eight gate episodes and 24 separate final episodes each. The final tests never select parameters; no candidate automatically replaces the approved controller. `--batches`, `--episodes-per-batch` and `--test-episodes` set explicit budgets. Repeating the command starts a fresh experiment from the selected Laya parent; it does not resume optimizer state or learn indefinitely in the background.
+
+In the desk, **Run** and **Restart** test the selected frozen checkpoint. **Training evidence** shows the measured batch changes, comparisons and retained per-decision reward credit. The credit viewer explicitly separates historical training from the current live game. Its future returns and value predictions use scaled rewards. The legacy paired-relay controls are hidden and disabled for this checkpoint; they remain available in the earlier adaptive and Laya-only modes.
+
+The corrected pilot, `runs/reward-student/cycle-20261011-050208-412071`, used four batches of four episodes per learner and 83 retained teacher frames. All four joint updates passed their training checks, changing 98,141 existing edge weights through shared gains and changing decoder weights by L2 0.03079. On eight separate final episodes, the joint learner and unchanged Laya student each hit 4/8 targets (mean returns -117.375 and -123.0); decoder-only RL hit 5/8 (-82.125). The joint learner's gate was 4/8, below 80%, so the approved default remains unchanged. This small pilot has not established a gameplay benefit from relay learning.
+
+Verification includes 359 software tests, 32 exactly replayed training decisions with independently checked delayed rewards and previous-batch value estimates, eight exactly replayed live decisions with teacher construction forbidden, restart, and a browser check of historical credit inspection without changing the live run. No browser exceptions or horizontal overflow at 390 px were observed. The earlier reward experiment is retained but rejected by the launcher because its rehearsal cache used pre-teaching weights; version 2 rebuilds and verifies that cache against the taught parent.
+
+The intended architecture is **offline Laya supervision -> trained anatomical relay/readout parameters**, followed by **native Doom image -> eye model -> visual/descending neural states -> action readout -> Doom**. Laya does not provide live features or override student actions. An optional same-frame comparison is a diagnostic, not policy control.
+
+```powershell
+# Run a bounded Laya-supervised connection/readout training cycle.
+.\.venv\Scripts\python.exe -m flydoom.laya_brain_training
+# Inspect the latest completed taught student, including a rejected candidate.
+.\.venv\Scripts\python.exe -m flydoom --laya-student
+```
+
+This teaching cycle uses the pinned Laya Vision model and the author's exact `doom_question` for basic target shooting, with left strafe, right strafe and attack. Its probabilities are mapped explicitly into the retained eight-output student interface; the other five outputs have no positive teaching target in this curriculum. Moving-target and navigation skills are not taught by this experiment.
+
+The verified aiming parent's decoder weights, neuron identities and normalization initialize learning. Retained causal training images are relabelled by this Laya teacher and combined with fresh student-visited and teacher-guided trajectories. No engine annotations or rule-based action targets are used in this cycle. Nonempty relay gain groups and their fitted readouts are evaluated against the same Laya soft-target loss. The fixed-biology ablation receives the same teaching data and initialization. Relay gain search uses training data only; the decoder epoch uses reserved validation targets, including epoch zero as a candidate. Visual rows, anatomy, transmission signs and response time constants stay fixed.
+
+The teacher subprocess closes before student-only gates and final game tests. A separately identified Laya-alone baseline runs on the same final openings. Teacher imitation accuracy, game outcomes, connection changes and biological validity are distinct evidence. A completed teaching cycle does not automatically replace the approved controller. The desk labels the taught student, shows its training history and supports an optional comparison using the same teacher question/action mapping. Optional live reward adaptation is separately labelled; it is not Laya teaching.
+
+The first completed Laya teaching cycle, `runs/laya-brain-learning/cycle-20261011-035639-088292`, used 334 training frames and 63 validation frames. Updating 173 shared transmission gains changed 98,141 existing edge weights; these were not independently fitted synapses. Validation agreement with Laya increased from 27.0% to 42.9%. On eight separate final basic-scenario episodes, Laya alone hit the target in 8/8, while the taught brain, fixed-connection ablation and approved controller each hit it in 4/8. Mean returns were 73.25, -154.25, -142.125 and -138.75 respectively. This small test establishes neither superiority from connection learning nor general Doom skill. The earlier promotion gate failed (candidate 2/8); the approved default is unchanged.
+
+Verification: 350 software tests passed. Eight actual live decisions reproduced identical full neural states, probabilities and actions from their recorded images with teacher construction forbidden. Actor/graph/time constants stayed frozen, engine labels were disabled, and restart retained the trained weights. These checks establish the deployed computation path, not biological validity or reliable gameplay.
+
+## Eight-action research and live relay learning (October 11, 2026)
+
+The versioned adaptive controller adds `TURN_LEFT` and `TURN_RIGHT` while retaining the six original actions. It simulates the anatomical visual-to-descending circuit and trains an engineered eight-action decoder. The earlier approved controller remains the default; use the experimental mode explicitly:
+
+```powershell
+.\.venv\Scripts\python.exe -m flydoom --adaptive
+# Choose the initial scenario:
+.\.venv\Scripts\python.exe -m flydoom --adaptive --scenario predict_position
+# Repeat the bounded four-stage experiment with newly reserved openings:
+.\.venv\Scripts\python.exe -m flydoom.adaptive_experiment
+```
+
+In the desk, **Run** executes the frozen candidate. **Relay learning** scrolls to the paired-learning controls. Pause first, choose `basic`, `predict_position`, or `deadly_corridor`, set a budget of 1?10 pairs, and select **Start paired learning**. Each pair repeats the same game seed with opposite bounded perturbations of nonempty relay transmission groups. Only the difference in real episode returns updates the learned center. Equal returns cause no update. The decoder, visual rows, topology, signs and response times remain fixed. This is an engineered reinforcement-learning rule, not an experimentally established fly plasticity mechanism.
+
+**Pause learning** stops automatic episode advancement; **End run** or **Restart episode** discards an unfinished pair without assigning a fictitious reward. Each episode retains its exact graph weights, time constants, input images, cell states and action contributions. Completed updates persist in `relay-learner.json`; its path is shown in the panel. To resume learned gains in a fresh episode:
+
+```powershell
+.\.venv\Scripts\python.exe -m flydoom --adaptive --checkpoint "ORIGINAL_CHECKPOINT_FOLDER" --resume-relay "SESSION_FOLDER\relay-learner.json"
+```
+
+Resume verifies checkpoint, decoder, learning-rule and saved-state identities. It does not restore a running game or an interrupted pair. The live learner never changes the approved registry. Existing caches and prior evidence are retained.
+
+The four-stage experiment separates weight, timing and decoder effects; refits existing measured response curves; collects an eight-action curriculum in three official ViZDoom scenarios; then applies paired reward learning and compares the candidate against fixed biology and the approved controller on reserved gate/test openings. Labels and target coordinates are training supervision only. Inference disables the labels buffer. Scenario caps are 75 decisions for basic/moving-target and 150 for corridor, each with up to four engine tics; the corridor benchmark is a bounded segment, not full-map completion. Kill frequency is not navigation success.
+
+**Open scientific requirements:** independent physiology recordings could not be downloaded (Dryad HTTP 401/403). Previously used high/low-luminance averages are development data. A completed experiment is not a claim of biological validation, reliable navigation, or improved game performance. Results and blocked criteria appear separately in `runs/adaptive-research/` and the adaptive panel.
+
+The completed adaptive cycle retained 348 training frames and 145 fresh validation frames, performed 9 reward pairs (4 nonzero updates), and changed 98,141 existing edge magnitudes across 173 transmission groups. Its 36 gate evaluations and 54 final-test evaluations did not pass promotion. On the same six final basic openings, the candidate scored 3/6 episodes with kills, fixed biology 2/6, and the approved controller 5/6. All three policies scored 0/6 on each of the moving-target and corridor final sets. These small samples do not establish general benefit. Training/development timing NRMSE was 0.4544/0.6762, with the latter above the 0.5 threshold.
+
+Validation: 344 tests passed; a real two-pair live session retained graph updates across restart and verified resume; four recorded whole-state/action decisions replayed exactly. The browser completed another real learning pair with zero JavaScript errors and no horizontal overflow at 390 px. Evidence is in `runs/adaptive-research/cycle-20261011-030128-397107/verification.json`, `runs/adaptive-live-check-1791678191231296200/report.json`, and `runs/adaptive-ui-check/`.
+
 ## Sensorimotor research cycle (October 10, 2026)
 
 The five-stage extension now trains existing-edge type-pair gains, fits measured L1/L2 timing with an explicit input-adaptation model, extends the visual graph to real descending-neuron candidates, collects fresh Laya labels on two Doom maps, and benchmarks frozen candidates before persistent promotion. It retains the earlier controller when a candidate fails its paired game gate. The latest candidate remains available for explicit inspection.
@@ -32,6 +117,22 @@ Timing training NRMSE fell from 0.5873 to 0.4544 after the plasticity stage, but
 Retained evidence: `runs/sensorimotor-learning/cycle-20261010-184257-980939/report.json`, its detailed sibling reports, and `runs/sensorimotor-ui-check/`. No datasets, checkpoints or caches were removed.
 
 The earlier visual-only controller and measurements below remain valid historical evidence. Their T4/T5-only limitations describe that checkpoint, not the new descending candidate.
+
+## Joint relay training
+
+```powershell
+.\.venv\Scripts\python.exe -m flydoom.bridge_training
+```
+
+This bounded experiment starts from the retained aiming candidate and specifically trains the added anatomical relay/descending rows. It fits separate positive/negative visual transmission and recurrent transmission multipliers, plus relay time-constant multipliers, within `[0.7, 1.3]`. The existing visual circuit, contact topology, transmitter signs, tonic operating point, and visual timing stay fixed. Relay timing is optimized for the task; it is not inferred from physiological recordings.
+
+Training reuses the previous training images and adds 24 fresh annotated episodes. Eight fresh validation episodes select the final decoder epoch. Eight paired relay perturbations use a complete-episode training prefix only. A cached-drive partition is permitted only when the graph has no relay feedback into the visual circuit; its outputs must match the full deployment integrator. The inherited measured visual flash responses must remain unchanged.
+
+The comparison includes a decoder-only model trained on the same data with relay weights and timing frozen. Sixteen untouched gate openings require at least 80% episodes with a kill and no kill/return regression against both that ablation and the approved controller. The final 24 paired openings per policy never select the model. Training annotations do not enter live inference. All evidence and visual-drive caches are retained under `runs/sensorimotor-learning/bridge-*`; the latest completed candidate is inspectable with `--candidate`. Failing the game gate retains the approved controller. The inherited physiological waveform validation remains unresolved.
+
+The completed joint-relay run (`bridge-20261011-023530-625108`) used 849 training frames and 39 fresh validation frames. It changed 98,141 existing edge weights through 173 nonempty transmission groups and changed 837 relay time constants from 20 ms to 18.4 or 21.6 ms. The metadata also records 375 transmission parameter groups; 202 channels have no contacts, as detailed in `effective-groups-audit.json`. The training-prefix objective improved from 0.779616 to 0.763533, but this did not establish a gameplay benefit.
+
+All three policies scored 12/16 kills on the gate, failing its 80% requirement. On the separate 24-opening final test, joint relay training scored **20/24** (mean return 3.54), the decoder-only ablation **23/24** (34.46), and the approved controller **22/24** (15.63). Neither the joint candidate nor the ablation replaced the champion. The final test cannot be used to promote the ablation after seeing its result. Visual flash traces stayed bitwise unchanged, and the inherited physiological validation remains failed. All 335 software tests passed; a live candidate episode had four exactly replayed neural states/actions and no browser exceptions.
 
 ## Current gameplay status
 

@@ -18,13 +18,22 @@ from flydoom.live_activity import frame_png
 from flydoom.movement_core import make_game, apply_action
 from flydoom.retinal_policy import ACTIONS, load_policy
 from flydoom.live_recording import write_arrays, observed_action
-from flydoom.sensorimotor import load_any
+from flydoom.adaptive_policy import load_any
 from flydoom.live_diagnostics import LiveDiagnostics, episode_end
 
 STATIC=Path(__file__).parent/'web/retinal'
 
 
 class RetinalSession:
+    def create_game(self,seed):
+        game=make_game(seed);game.set_seed(seed);game.new_episode();return game
+
+    def play_action(self,action):
+        return observed_action(self.game,action)
+
+    def complete_record(self,record):
+        """Hook for episode-level learners before a record is published."""
+
     def __init__(self, checkpoint, output):
         self.encoder,self.actor,self.report=load_any(checkpoint)
         self.checkpoint=Path(checkpoint);self.output=Path(output);self.output.mkdir(parents=True,exist_ok=False)
@@ -44,7 +53,7 @@ class RetinalSession:
             if getattr(self,'restarting',False):raise ValueError('Episode restart is in progress')
             if self.busy or not self.paused:raise ValueError('Pause and wait for the current decision first')
             if self.game:self.game.close()
-            self.game=make_game(seed);self.game.set_seed(seed);self.game.new_episode()
+            self.game=self.create_game(seed)
             self.encoder.reset();self.actor.reset();self.sequence=0;self.seed=seed;self.error=None;self.phase='ready';self.pending=0;self.latest_arrays=None
             self.rng=np.random.default_rng(seed);self.folder=self.output/datetime.now().strftime('run-%H%M%S-%f')
             self.folder.mkdir();self.actor.save(self.folder/'actor-start.npz')
@@ -55,7 +64,7 @@ class RetinalSession:
                        'initial_actor_sha256':digest(self.folder/'actor-start.npz','sha256'),
                        'mode':'Retinal output controls the game; new-run retains this process learner weights'})
             self.latest={'sequence':0,'frame':frame_png(self.game.get_state().screen_buffer),'action':'Not decided',
-                         'probabilities':[1/6]*6,'reward':0,'return':0,'kills':0,'trace':[],
+                         'probabilities':[1/len(self.actor.weights)]*len(self.actor.weights),'reward':0,'return':0,'kills':0,'trace':[],
                          'terms':None,'feedback':None,'after_frame':None,'encoding_ms':0,'wall_ms':0}
             write_json(self.folder/'0000.json',self.latest)
             self.log_event('episode_started',seed=seed,checkpoint=str(self.checkpoint),learning=self.learning)
@@ -124,7 +133,7 @@ class RetinalSession:
             cell['tau_ms']=float(self.encoder.model.tau[i])
         action_start=perf_counter()
         action_start_tick=self.game.get_episode_time()
-        effect,action_frames=observed_action(self.game,action)
+        effect,action_frames=self.play_action(action)
         game_ms=(perf_counter()-action_start)*1000
         feedback=self.actor.feedback(features,action,p,effect['reward_delta']) if self.learning else None
         after=self.game.get_state()
@@ -133,12 +142,12 @@ class RetinalSession:
         playback=[frame_png(image) for image in action_frames]
         record={'sequence':sequence,'frame':frame_png(frame),'after_frame':playback[-1] if after and playback else None,
                 'action_frames':playback,'frame_interval_ms':1000/35,
-                'action':ACTIONS[action],'probabilities':p.tolist(),'reward':effect['reward_delta'],
+                'action':getattr(self.actor,'actions',ACTIONS)[action],'probabilities':p.tolist(),'reward':effect['reward_delta'],
                 'return':float(self.game.get_total_reward()),'kills':effect['kills'],'effect':effect,
                 'terms':terms,'feedback':feedback,'learning_at_decision':self.learning,
                 'encoding_ms':telemetry['encoding_ms'],'trace':telemetry['trace'],
                 'neural_clock_ms':telemetry['neural_clock_ms'],'wall_ms':(perf_counter()-start)*1000}
-        record['termination']=episode_end(self.game,effect,sequence,action_start_tick=action_start_tick)
+        record['termination']=episode_end(self.game,effect,sequence,action_start_tick=action_start_tick,decision_limit=getattr(self,'decision_limit',75))
         frame_ms=(perf_counter()-frame_start)*1000
         archive_start=perf_counter()
         path=self.folder/f'{sequence:04d}.npz'
@@ -153,6 +162,7 @@ class RetinalSession:
                           'archive_ms':(perf_counter()-archive_start)*1000}
         record['timing']['total_ms']=(perf_counter()-start)*1000
         record['timing']['scope']='Includes NPZ and actor writes; excludes final JSON write and publication'
+        self.complete_record(record)
         write_json(self.folder/f'{sequence:04d}.json',record)
         with self.condition:
             self.latest=record;self.latest_arrays=arrays;self.sequence=sequence
@@ -196,7 +206,7 @@ class RetinalSession:
                     'error':self.error,'latest_sequence':self.sequence,'run':str(self.folder),'seed':self.seed}
 
     def metadata(self):
-        return {'mode':'Closed-loop retinal controller','actions':ACTIONS,'neurons':len(self.encoder.ids),
+        return {'mode':'Closed-loop retinal controller','actions':getattr(self.actor,'actions',ACTIONS),'neurons':len(self.encoder.ids),
                 'readout_cells':len(self.actor.root_ids),'checkpoint':str(self.checkpoint),
                 'gains':self.encoder.gains.tolist(),'benchmark':self.report['test'],
                 'controls_action':True,'online_laya':False,'whole_brain_motor_path':False,
@@ -213,7 +223,7 @@ class RetinalSession:
         if not records:raise ValueError('No completed live decision to resume')
         last=json.loads(records[-1].read_text());archive=records[-1].with_suffix('.npz')
         if digest(archive,'sha256')!=last['recording_sha256']:raise ValueError('Live decision archive changed')
-        actor=RetinalActor.load(folder/'actor-latest.npz')
+        actor=type(self.actor).load(folder/'actor-latest.npz')
         with np.load(archive,allow_pickle=False) as data:
             if not np.array_equal(actor.weights,data['weights_after']):raise ValueError('Latest actor does not match completed decision')
         for name in ('root_ids','indices','mean','scale'):
