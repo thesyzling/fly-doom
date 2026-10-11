@@ -6,6 +6,42 @@ A research project to train a model based on the real fruit fly connectome to co
 
 ## Laya teaches; the brain plays through its own eye
 
+Failure diagnosis and corrective teaching are available in separate tools:
+
+**Latest measured deployment comparison:** on the same 32 reserved starts, the retained greedy brain hit 13 targets (40.6%), its unchanged learned policy with categorical sampling hit 17 (53.1%), and the same sampler with visual input disconnected hit 14 (43.8%). Sampling gained seven successes and lost three. It failed the predeclared retention and visual-control margins; no preferred/default model was replaced. This is a deployment experiment, not new successful weight training. The three balanced readout fits below were also rejected on development gameplay.
+
+To explicitly inspect the sampled experiment with frozen weights:
+
+```powershell
+.\.venv\Scripts\python.exe -m flydoom --checkpoint runs/sampling-evaluation-v1
+```
+
+`--sampled-student` follows the acceptance result and currently retains the parent; its desk explains the fallback and shows the full comparison. [Protocol, limits and verification](docs/RESEARCH.md#deploying-the-stochastic-reward-trained-policy-october-11-2026).
+
+The follow-up balanced protocol reuses all 833 verified TRAIN frames, rehearses prior behavior and selects by development gameplay with explicit retention checks. Its play command loads an accepted correction or automatically retains the parent if acceptance fails:
+
+```powershell
+.\.venv\Scripts\python.exe -m flydoom.recovery_training_v2
+.\.venv\Scripts\python.exe -m flydoom --balanced-student
+```
+
+The second command only plays saved weights; it does not retrain. [Protocol and measured results](docs/RESEARCH.md#balanced-correction-with-parent-retention-october-11-2026).
+
+**The first correction did not improve gameplay.** On 24 matched fresh starts, the unchanged parent hit 11 targets (45.8%), while both corrected variants hit four (16.7%). No default was replaced. Validation teacher agreement increased to 73.25%, but a TRAIN-chosen constant RIGHT prediction scores 81.53% on the imbalanced validation labels. `--recovery-student` explicitly opens that failed-gate experiment for inspection, not an improved recommended controller. See [the failure analysis and complete outcome](docs/RESEARCH.md#failure-diagnosis-and-student-visited-correction-october-11-2026).
+
+```powershell
+# Diagnose retired test games, including same-image Laya comparisons:
+.\.venv\Scripts\python.exe -m flydoom.failure_audit --output runs/my-failure-audit
+# Inspect target-patch sensitivity from that audit without invoking Laya again:
+.\.venv\Scripts\python.exe -m flydoom.failure_audit --output runs/my-failure-audit --occlusion
+# Correct a specific learned parent using fresh student-controlled trajectories:
+.\.venv\Scripts\python.exe -m flydoom.recovery_training --parent runs/reward-student/cycle-20261011-050208-412071
+# Play the latest completed corrective-teaching experiment, with weights frozen:
+.\.venv\Scripts\python.exe -m flydoom --recovery-student
+```
+
+The diagnostic found repeated left/right reversals in failed games and a teaching-coverage gap: all 334 original Laya TRAIN frames came from the first 24 decisions. Correction records complete student-controlled episodes up to the standard 75-decision cap, labels them with Laya offline and retains original TRAIN examples. It trains both shared anatomical relay gains and the readout, with a fixed-relay control and unchanged-parent benchmark. Engine annotations are diagnostic-only; they do not supply correction targets or deployed actions. The correction registry is separate from the reward-training registry, and old models/caches remain intact. This is a bounded DAgger-style correction pass, not a claim that the failure is solved before its independent tests. [Diagnosis and protocol](docs/RESEARCH.md#failure-diagnosis-and-student-visited-correction-october-11-2026).
+
 To **play the already trained model**, run `python -m flydoom --reward-student`. Run and Restart do not train. A target hit ends the single-target scenario immediately, even before the time or decision cap. These are per-episode limits, not a limit on the whole training experiment. Offline training automatically advances through its episode budget.
 
 To **continue learned weights**, use the versioned continuation trainer:

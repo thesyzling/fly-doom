@@ -54,6 +54,14 @@ async function adaptiveStatus(){
     const teachingDetails=el('details');teachingDetails.append(el('summary','Repeat Laya teaching'),el('p','Run another bounded training cycle from the retained parent, with fresh reserved evaluation openings. The teacher closes before student game tests. Existing checkpoints remain intact.'),command);panel.append(teachingDetails);
    }
    if(s.reward_training)showRewardTraining(panel,s.reward_training,s.game_gate_passed);
+   if(s.recovery_training)showRecoveryTraining(panel,s.recovery_training,s.game_gate_passed,s.evidence.teaching_coverage);
+   if(s.sampling_evaluation)showPolicySampling(panel,s.sampling_evaluation,s.game_gate_passed);
+   if(s.selection_evidence){
+    const audit=s.selection_evidence,note=el('p'),method=audit.kind==='sampling'?'Sampling':'Balanced correction';note.id='selectionEvidence';
+    note.textContent=audit.accepted?`${method} passed the predeclared comparative acceptance checks. This remains an experimental basic-scenario controller.`:`${method} did not pass acceptance. This live session uses the retained parent. The game table reports the latest matched comparison, including the rejected candidate.`;
+    panel.querySelector('.table-scroll').before(note);
+    if(!audit.accepted)$('activeModel').textContent=`Retained parent / ${method.toLowerCase()} rejected / frozen test`;
+   }
   }
   $('relayMode').textContent=s.running?'BOUNDED LEARNING':'PAUSED / FROZEN';
   $('relayStatus').textContent=`${s.completed_pairs} completed pairs · ${s.remaining_episodes} budgeted episodes remaining · ${s.active_groups} active gain groups · ${s.changed_groups} changed · live gain change from checkpoint (L2): ${s.gain_delta_l2.toExponential(3)}${s.trial?` · ${s.trial.side} trial / seed ${s.trial.seed}`:''}`;
@@ -94,5 +102,65 @@ function showRewardTraining(panel,r,gatePassed){
   for(const row of d.records){const tr=el('tr');[row.decision,row.action,`${(100*row.probability).toFixed(1)}%`,row.reward.toFixed(1),row.discounted_return.toFixed(4),row.predicted_value.toFixed(4),row.advantage_before_scaling.toFixed(4)].forEach(v=>tr.append(el('td',String(v))));t.append(tr)}trace.replaceChildren(t)};
  select.onchange=safe(load);credit.ontoggle=safe(async()=>{if(credit.open&&!trace.children.length)await load()});
  evidence.append(credit,el('p','Run and Restart test saved weights; they do not train. To continue learning from the latest completed weights, use the separate command below. It opens no browser. Episodes advance automatically within its finite batch budget; previous models are retained and the approved controller is unchanged.'),el('pre','.\\.venv\\Scripts\\python.exe -m flydoom.reward_training_v3'));
+ panel.querySelector('.table-scroll').after(evidence);
+}
+
+function showRecoveryTraining(panel,r,gatePassed,coverage){
+ if(r.version===2)return showBalancedRecovery(panel,r,gatePassed,coverage);
+ panel.querySelector('h2').textContent='Failure recovery / Laya corrections on student-visited states';
+ panel.querySelector('p').textContent=`The previous brain controlled its own training games. Laya labelled those images offline, including states produced by wrong turns and missed shots. ${r.fresh_train_frames} new frames and ${r.retained_train_frames} retained TRAIN frames supported relay search and readout correction. ${r.changed_edges?'Accepted relay changes are measured below.':'Relay proposals were rejected; previously learned connections were retained.'} Laya supplies no live actions.`;
+ $('activeModel').textContent=`Laya-corrected brain / experimental / game gate ${gatePassed?'passed':'failed'}`;
+ $('trainingMethod').textContent=r.method+'. The previously learned graph and readout initialize correction. Physiological timing stays fixed.';
+ $('evidenceScope').textContent='Fresh matched game tests compare joint correction, fixed-relay readout correction and the unchanged parent. Diagnostic test images were excluded from fitting. Teacher agreement alone does not prove game improvement.';
+ $('feedbackNote').textContent='Frozen corrected-policy test. Run and Restart preserve weights. Prior reward learning is inherited; this correction pass used Laya probabilities on newly collected student observations.';
+ document.querySelector('.heading .intro').textContent='The eye-driven brain plays independently after offline correction of its own recovery states.';
+ document.querySelector('.new p').textContent='Restart plays another episode with the frozen corrected model. Offline training is separate; this live session preserves its weights.';
+ $('relayStart').closest('details').hidden=true;
+ $('relayPath').closest('details').hidden=true;
+ const evidence=el('section');evidence.id='recoveryEvidence';
+ evidence.append(el('h3','Measured correction and its limits'),el('p',`Parent checkpoint: ${r.parent}. ${r.changed_edges.toLocaleString()} existing edge weights changed; readout change L2 ${r.decoder_change_l2.toFixed(5)}.`));
+ const v=r.teacher_fit,table=el('table'),head=el('tr');
+ ['Teacher agreement audit','Before','After'].forEach(t=>head.append(el('th',t)));table.append(head);
+ for(const split of ['train','validation']){const row=el('tr');[split,`${(100*v.initial[split].agreement).toFixed(1)}% / KL ${v.initial[split].kl.toFixed(4)}`,`${(100*v.final[split].agreement).toFixed(1)}% / KL ${v.final[split].kl.toFixed(4)}`].forEach(t=>row.append(el('td',t)));table.append(row)}
+ const scroll=el('div');scroll.className='table-scroll';scroll.append(table);evidence.append(scroll);
+ evidence.append(el('p','The initial/final teacher metrics use the selected relay graph; the ablation below separates relay and decoder effects. Game results above use independent starts and frozen policies. A failed gate is retained as evidence and does not replace the approved controller.'));
+ if(coverage)evidence.append(el('p',`Constant-action reference: always ${coverage.constant_action_chosen_from_train}, chosen using TRAIN labels only, agrees with ${(100*coverage.constant_action_validation_agreement).toFixed(1)}% of validation labels. ${coverage.scope}`));
+ panel.querySelector('.table-scroll').after(evidence);
+}
+
+function showBalancedRecovery(panel,r,gatePassed,coverage){
+ panel.querySelector('h2').textContent='Balanced teaching / retention and gameplay checks';
+ panel.querySelector('p').textContent=`${r.reused_train_frames} verified TRAIN images were replayed through the inherited brain. Episodes and teacher action classes were balanced; successful parent behavior received extra rehearsal. Eight development games selected the readout before independent acceptance and final tests. No new teacher inference or anatomical weight update occurred in this pass.`;
+ $('activeModel').textContent=`Balanced readout / experimental / improvement check ${r.acceptance.passed?'passed':'failed'} / 80% readiness ${gatePassed?'passed':'failed'}`;
+ document.querySelector('.heading .intro').textContent='Laya-taught and reward-trained neural circuit, with a balanced action readout tested against its parent.';
+ $('trainingMethod').textContent=r.method;
+ $('evidenceScope').textContent='Development gameplay selects the candidate. The final games above were untouched until selection finished. Parent successes lost and additional hits are counted separately; results cover basic target shooting only.';
+ $('feedbackNote').textContent='Frozen eye-driven play. Laya and the optimizer are absent from live action selection.';
+ document.querySelector('.new p').textContent='Restart retains this checkpoint and starts a new frozen episode. Offline training remains separate.';
+ $('relayStart').closest('details').hidden=true;$('relayPath').closest('details').hidden=true;
+ const evidence=el('section');evidence.id='recoveryEvidence';
+ evidence.append(el('h3','Parent retention and acceptance'),el('p',`Selected step: ${r.selected_fraction}. Decoder change L2 ${r.decoder_change_l2.toFixed(5)}; anatomical weights and physiological timing retained.`));
+ const a=r.acceptance;
+ evidence.append(el('p',`Final comparison: ${a.final.gained_successes} additional successful starts, ${a.final.lost_parent_successes} lost parent successes; mean return change ${a.final.mean_return_change.toFixed(2)}. ${a.criterion}`));
+ const table=el('table'),head=el('tr');['Development policy','Hits / 8','Lost parent hits','Eligible'].forEach(v=>head.append(el('th',v)));table.append(head);
+ for(const [name,row] of Object.entries(r.development_selection)){const tr=el('tr');[name,row.hits,row.lost_parent_successes,row.eligible?'yes':'no'].forEach(v=>tr.append(el('td',String(v))));table.append(tr)}
+ const scroll=el('div');scroll.className='table-scroll';scroll.append(table);evidence.append(scroll);
+ if(coverage)evidence.append(el('p',`Teacher-label reference: constant ${coverage.constant_action_chosen_from_train}, selected from TRAIN, matches ${(100*coverage.constant_action_validation_agreement).toFixed(1)}% of validation labels. This is not a gameplay result and did not select the deployed checkpoint.`));
+ panel.querySelector('.table-scroll').after(evidence);
+}
+
+function showPolicySampling(panel,r,gatePassed){
+ panel.querySelector('h2').textContent='Reward-trained policy / deployment comparison';
+ panel.querySelector('p').textContent='Reward training sampled actions from the neural policy. This session uses that same learned distribution instead of always taking its largest entry. Network weights, response times and the action decoder are unchanged. Sampling is reproducible from the episode seed; it is not uniform randomness or live learning.';
+ $('activeModel').textContent=`Sampled neural policy / experimental / ${r.paired_final.net_additional_hits>0?'more measured hits':'no measured hit gain'} / full acceptance ${r.acceptance_passed?'passed':'failed'}`;
+ document.querySelector('.heading .intro').textContent='The eye-driven neural circuit supplies action probabilities; the frozen reward-trained policy samples the next action.';
+ $('selectionNote').textContent='The selected action is sampled from the displayed neural probabilities. It can differ from the highest bar. The episode seed and every selected action are recorded for exact replay.';
+ $('trainingMethod').textContent='Laya teaching and reward learning are inherited. This experiment changes action selection only; no weights were retrained.';
+ $('evidenceScope').textContent='Same reserved starts: greedy connected policy, sampled connected policy, and the same sampler with visual input disconnected. This tests deployment and dependence on visual transmission, not superiority of biological anatomy.';
+ $('feedbackNote').textContent='Frozen learned policy. Sampling does not update weights. Laya supplies no live action input.';
+ document.querySelector('.new p').textContent='Restart creates another seeded episode with unchanged weights. Its sampled actions remain exactly reproducible.';
+ $('relayStart').closest('details').hidden=true;$('relayPath').closest('details').hidden=true;
+ const evidence=el('section');evidence.id='samplingEvidence';
+ evidence.append(el('h3','Matched deployment evidence'),el('p',`Final paired comparison: ${r.paired_final.gained_successes} additional successful starts, ${r.paired_final.lost_parent_successes} lost greedy successes; mean return change ${r.paired_final.mean_return_change.toFixed(2)}.`),el('p',r.acceptance_rule),el('p',r.scope));
  panel.querySelector('.table-scroll').after(evidence);
 }

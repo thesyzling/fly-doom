@@ -27,6 +27,9 @@ class AdaptiveSession(IntegratedSession):
         self.adaptive_evidence={'ablation':json.loads((self.checkpoint/'ablation.json').read_text()),
                                'timing':{k:timing['proposal'][k] for k in ('tau_ms','final','development_low_luminance','waveform_threshold_passed','scope')},
                                'physiology_status':timing['status']}
+        if self.report.get('recovery_training'):
+            from flydoom.recovery_evidence import teacher_coverage
+            self.adaptive_evidence['teaching_coverage']=teacher_coverage(json.loads((self.checkpoint/'experience.json').read_text(encoding='utf-8')))
         self.save_learner()
         self.coordinator=Thread(target=self.advance_loop,daemon=True);self.coordinator.start()
 
@@ -95,7 +98,7 @@ class AdaptiveSession(IntegratedSession):
 
     def start_learning(self,pairs,scenario):
         with self.condition:
-            if self.report.get('reward_training'):
+            if self.report.get('reward_training') or self.report.get('recovery_training') or self.report.get('sampling_evaluation'):
                 raise ValueError('This desk tests a frozen reward-trained checkpoint. Run python -m flydoom.reward_training_v3 to continue learned weights in a bounded training experiment.')
             if type(pairs)!=int or not 1<=pairs<=10 or scenario not in TASKS:raise ValueError('Choose 1 to 10 pairs and a supported scenario')
             if self.busy or not self.paused or self.teacher_busy:raise ValueError('Pause and wait before starting paired learning')
@@ -155,15 +158,19 @@ class AdaptiveSession(IntegratedSession):
                     'largest_live_gain_changes':groups,
                     'last_feedback':learner.history[-1] if learner.history else None,
                     'checkpoint':str(self.checkpoint),'live_state':str(self.output/'relay-learner.json'),
-                    'four_steps':self.report['four_steps'],'benchmark':self.report['test_by_task'],
+                    'four_steps':self.report['four_steps'],'benchmark':(getattr(self,'selection_evidence',None) or {}).get('test_by_task',self.report['test_by_task']),
+                    'selection_evidence':getattr(self,'selection_evidence',None),
                     'teacher_training':self.report.get('laya_training'),
                     'reward_training':self.report.get('reward_training'),
+                    'recovery_training':self.report.get('recovery_training'),
+                    'sampling_evaluation':self.report.get('sampling_evaluation'),
                     'game_gate_passed':bool(self.report.get('game_gate_passed',False)),
                     'evidence':self.adaptive_evidence,
                     'biological_validation_passed':False,'promoted':False}
 
     def metadata(self):
         value=super().metadata();value['adaptive']=True
+        value['selection_evidence']=getattr(self,'selection_evidence',None)
         value['teacher']['role']='Inherited offline Laya teacher; eight-action curriculum uses training-only engine annotations. Laya comparison supports the original six actions.'
         if self.report.get('laya_training'):
             value['teacher']['role']='Laya taught relay connections and the readout from images; basic strafe/fire curriculum. Live decisions use the eye and brain only.'
@@ -171,6 +178,13 @@ class AdaptiveSession(IntegratedSession):
         if self.report.get('reward_training'):
             value['reward_training']=self.report['reward_training']
             value['teacher']['role']='Offline initialization teacher; subsequent learning used game rewards and retained teacher examples. No live teacher input.'
+        if self.report.get('recovery_training'):
+            value['recovery_training']=self.report['recovery_training']
+            value['teacher']['role']='Offline correction on student-visited images, following inherited reward training. No live teacher input or weight changes.'
+        if self.report.get('sampling_evaluation'):
+            value['sampling_evaluation']=self.report['sampling_evaluation']
+            value['decision_sampling']=self.report['decision_sampling']
+            value['teacher']['role']='Offline Laya teacher. Frozen live actions sample the learned reward-trained neural policy; no teacher call or weight update.'
         return value
 
     def resume_relay(self,path):

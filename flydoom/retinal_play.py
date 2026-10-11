@@ -20,6 +20,7 @@ from flydoom.retinal_policy import ACTIONS, load_policy
 from flydoom.live_recording import write_arrays, observed_action
 from flydoom.adaptive_policy import load_any
 from flydoom.live_diagnostics import LiveDiagnostics, episode_end
+from flydoom.policy_sampling import choose_action, sampling_enabled
 
 STATIC=Path(__file__).parent/'web/retinal'
 
@@ -124,7 +125,8 @@ class RetinalSession:
     def step(self):
         start=perf_counter();frame=self.game.get_state().screen_buffer.copy()
         raw,telemetry=self.encoder.encode(frame,telemetry=True)
-        action,p,features=self.actor.decide(raw,self.rng if self.learning else None)
+        sampled=self.learning or sampling_enabled(self.report)
+        action,p,features=choose_action(self.actor,raw,self.rng,sample=sampled)
         before=self.actor.weights.copy();terms=self.actor.contributions(features,action)
         # Logit terms are captured before feedback changes the decoder.
         for cell in terms['cells']:
@@ -145,6 +147,7 @@ class RetinalSession:
                 'action':getattr(self.actor,'actions',ACTIONS)[action],'probabilities':p.tolist(),'reward':effect['reward_delta'],
                 'return':float(self.game.get_total_reward()),'kills':effect['kills'],'effect':effect,
                 'terms':terms,'feedback':feedback,'learning_at_decision':self.learning,
+                'selection_mode':'categorical' if sampled else 'greedy','sampling_seed':self.seed if sampled else None,
                 'encoding_ms':telemetry['encoding_ms'],'trace':telemetry['trace'],
                 'neural_clock_ms':telemetry['neural_clock_ms'],'wall_ms':(perf_counter()-start)*1000}
         record['termination']=episode_end(self.game,effect,sequence,action_start_tick=action_start_tick,decision_limit=getattr(self,'decision_limit',75))

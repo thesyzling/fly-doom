@@ -99,10 +99,12 @@ function drawTeacherHistory(){
   $('trainingChartTitle').textContent=d.target_source?'Aiming correction / training history':'Measured distillation history';
   if(meta.laya_training)$('trainingChartTitle').textContent='Laya-supervised readout / after relay fitting';
   if(meta.reward_training)$('trainingChartTitle').textContent='Inherited Laya initialization / before reward learning';
+  if(meta.distillation_inherited_from)$('trainingChartTitle').textContent='Inherited Laya teaching history';
   $('fitEpoch').textContent='SELECTED EPOCH '+d.selected_epoch;
   $('teacherIdentity').textContent=meta.teacher.repo+' / '+meta.teacher.revision.slice(0,12)+' / '+meta.teacher.role;
   $('teacherMetrics').textContent=`${d.target_source||"Recorded Laya teacher distillation"}. Validation KL ${d.initial.validation.kl.toFixed(4)} before training; ${d.final.validation.kl.toFixed(4)} selected. Label agreement is separate from measured game success.`;
   if(meta.reward_training)$('teacherMetrics').textContent+=' These are parent teaching metrics, not post-RL measurements. Reward-learning results appear in Training evidence.';
+  if(meta.distillation_inherited_from)$('teacherMetrics').textContent+=` Inherited from ${meta.distillation_inherited_from}; these metrics do not measure the current deployment change.`;
 }
 async function startIntegrated(){
   drawTeacherHistory();brain=new GradedBrainMap(safe(selectIntegratedCell));await brain.load(meta);await brain.loadSurfaces();
