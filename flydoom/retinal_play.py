@@ -18,7 +18,7 @@ from flydoom.live_activity import frame_png
 from flydoom.movement_core import make_game, apply_action
 from flydoom.retinal_policy import ACTIONS, load_policy
 from flydoom.live_recording import write_arrays, observed_action
-from flydoom.adaptive_policy import load_any
+from flydoom.stable_vision import load_any
 from flydoom.live_diagnostics import LiveDiagnostics, episode_end
 from flydoom.policy_sampling import choose_action, sampling_enabled
 

@@ -30,7 +30,7 @@ from flydoom.visual_observer import sample_frame
 def distillation_evidence(checkpoint, report):
     """Read current teaching evidence or a checksum-verified inherited history."""
     path=Path(checkpoint)/'distillation.json'
-    if path.exists():return json.loads(path.read_text(encoding='utf-8')),None
+    if path.exists():return json.loads(path.read_text(encoding='utf-8')),report.get('distillation_inherited_from')
     parent=Path(report['parent'])
     if digest(parent/'report.json','sha256')!=report['parent_report_sha256']:
         raise ValueError('Inherited teaching report changed')
@@ -152,7 +152,11 @@ class IntegratedSession(RetinalSession):
             value['note']='Anatomical context only; this cell is outside the active neural circuit.'
             return value
         i=self.visual_lookup[root];state=saved['delta'];weights=self.encoder.model.weights
-        released=np.maximum(self.encoder.model.baseline+state,0)-np.maximum(self.encoder.model.baseline,0)
+        if self.report.get('neural_numerics'):
+            from flydoom.stable_vision import evoked_release
+            released=evoked_release(self.encoder.model.baseline,state)
+        else:
+            released=np.maximum(self.encoder.model.baseline+state,0)-np.maximum(self.encoder.model.baseline,0)
         a,b=weights.indptr[i:i+2];sources=weights.indices[a:b];w=weights.data[a:b];products=w*released[sources]
         for j in np.argsort(-abs(products),kind='stable')[:12]:
             source=str(self.encoder.ids[sources[j]])
@@ -291,7 +295,7 @@ def handler(session):
                     value=state();progress=ROOT/'progress.json'
                     value['progress']=json.loads(progress.read_text()) if progress.exists() else None
                     value['active_checkpoint']=str(session.checkpoint.resolve())
-                    value['adaptive']=session.report.get('schema')=='adaptive_sensorimotor_v1'
+                    value['adaptive']=session.report.get('schema') in ('adaptive_sensorimotor_v1','stable_sensorimotor_v1')
                     value['active_report']=session.report if session.report.get('schema')=='sensorimotor_v2' else None
                     if value['latest']:
                         value['latest_report']=json.loads((Path(value['latest']['path'])/'report.json').read_text())
@@ -351,6 +355,9 @@ def main(argv=None):
     parser.add_argument('--recovery-student',action='store_true',help='Latest student-visited Laya correction checkpoint; frozen eye/brain play')
     parser.add_argument('--balanced-student',action='store_true',help='Accepted balanced correction, or the retained parent if acceptance failed')
     parser.add_argument('--sampled-student',action='store_true',help='Verified categorical deployment of the reward-trained brain, with parent fallback')
+    parser.add_argument('--precision-student',action='store_true',help='Explicitly inspect the latest corrected-arithmetic experiment, including a failed game gate')
+    parser.add_argument('--self-trained',action='store_true',help='Preferred model after guarded corrected reward-learning cycles; rejected candidates do not replace it')
+    parser.add_argument('--learning-candidate',action='store_true',help='Explicitly inspect the latest reward-learning candidate, including a rejected one')
     parser.add_argument('--scenario',choices=('basic','predict_position','deadly_corridor'),default='basic')
     parser.add_argument('--resume-relay',type=Path,help='Resume verified biological relay gains from a relay-learner.json file')
     parser.add_argument('--resume-live',type=Path,help='Restore verified decoder weights into a fresh episode')
@@ -359,8 +366,9 @@ def main(argv=None):
     args=parser.parse_args(argv)
     selection_evidence=None
     from flydoom.research_registry import champion,state
-    if sum((args.laya_student,args.reward_student,args.recovery_student,args.balanced_student,args.sampled_student))>1:parser.error('Choose one student mode')
-    if args.laya_student or args.reward_student or args.recovery_student or args.balanced_student or args.sampled_student:args.adaptive=True
+    student_modes=(args.laya_student,args.reward_student,args.recovery_student,args.balanced_student,args.sampled_student,args.precision_student,args.self_trained,args.learning_candidate)
+    if sum(student_modes)>1:parser.error('Choose one student mode')
+    if any(student_modes):args.adaptive=True
     if args.candidate and args.checkpoint:parser.error('Choose --candidate or --checkpoint')
     if args.adaptive and args.candidate:parser.error('Choose --adaptive or --candidate')
     if args.resume_relay and not args.adaptive:parser.error('--resume-relay requires --adaptive')
@@ -368,6 +376,13 @@ def main(argv=None):
         if args.resume_live:parser.error('Use --resume-relay for adaptive learning')
         if args.checkpoint is None:
             pointer=Path('runs/sampling-evaluation-v1/selected.json' if args.sampled_student else 'runs/balanced-student/selected.json' if args.balanced_student else 'runs/recovery-student/latest.json' if args.recovery_student else 'runs/reward-student/latest.json' if args.reward_student else 'runs/laya-brain-learning/latest.json' if args.laya_student else 'runs/adaptive-research/latest.json')
+            if args.precision_student:
+                pointer=Path('runs/precision-student/latest.json')
+                if not pointer.exists():parser.error('Run python -m flydoom.precision_training first')
+            if args.self_trained or args.learning_candidate:
+                learning_root=Path('runs/self-learning-expanded') if Path('runs/self-learning-expanded/selected.json').exists() else Path('runs/self-learning')
+                pointer=learning_root/('selected.json' if args.self_trained else 'latest.json')
+                if not pointer.exists():parser.error('Complete python -m flydoom.self_learning first')
             if not pointer.exists():parser.error('Complete the locked sampling evaluation first' if args.sampled_student else 'Run python -m flydoom.recovery_training_v2 first' if args.balanced_student else 'Run python -m flydoom.recovery_training --parent PATH first' if args.recovery_student else 'Run python -m flydoom.reward_training_v2 first' if args.reward_student else 'Run python -m flydoom.laya_brain_training first' if args.laya_student else 'Run python -m flydoom.adaptive_experiment first')
             latest=json.loads(pointer.read_text());args.checkpoint=Path(latest['path'])
             if digest(args.checkpoint/'report.json','sha256')!=latest['sha256']:raise ValueError('Adaptive report changed')
@@ -386,6 +401,17 @@ def main(argv=None):
                 selection_evidence={'kind':'sampling','accepted':latest['accepted'],'experiment':str(pointer.parent),
                                     'test_by_task':evidence['test_by_task'],
                                     'acceptance':evidence['sampling_evaluation']}
+            if args.self_trained:
+                from flydoom.self_learning import verified_pointer
+                from flydoom.stable_vision import load_any as verify_corrected
+                experiment=verified_pointer(pointer.parent/'latest.json')
+                if experiment.resolve()!=Path(latest['experiment']).resolve():raise ValueError('Learning selection evidence changed')
+                evidence=verify_corrected(experiment)[2]
+                selection_evidence={'kind':'self_learning','accepted':latest['accepted'],'experiment':str(experiment),
+                    'test_by_task':evidence['test_by_task'],'acceptance':evidence['reward_training']['acceptance'],
+                    'changed_edges':evidence['reward_training']['changed_edges'],
+                    'decoder_change_l2':evidence['reward_training']['decoder_change_l2'],
+                    'learning_protocol':{k:evidence['reward_training'].get(k) for k in ('version','training_episodes_per_policy','rehearsal_frames','rehearsal_episodes','rehearsal_episodes_seen','successful_training_memory')}}
     elif args.candidate:
         latest=state()['latest']
         if latest is None:parser.error('No completed sensorimotor candidate exists')
@@ -395,7 +421,7 @@ def main(argv=None):
     review=args.checkpoint/'review.json'
     if review.exists() and json.loads(review.read_text()).get('eligible_for_use') is False:
         parser.error('This experiment was superseded after a rehearsal-cache error. Run python -m flydoom.reward_training_v2 and inspect its completed checkpoint.')
-    if json.loads((args.checkpoint/'report.json').read_text()).get('schema')=='adaptive_sensorimotor_v1':
+    if json.loads((args.checkpoint/'report.json').read_text()).get('schema') in ('adaptive_sensorimotor_v1','stable_sensorimotor_v1'):
         args.adaptive=True
         if args.resume_live:parser.error('Use --resume-relay for adaptive learning')
     if args.scenario!='basic' and not args.adaptive:parser.error('--scenario requires an adaptive checkpoint')

@@ -56,14 +56,31 @@ async function adaptiveStatus(){
    if(s.reward_training)showRewardTraining(panel,s.reward_training,s.game_gate_passed);
    if(s.recovery_training)showRecoveryTraining(panel,s.recovery_training,s.game_gate_passed,s.evidence.teaching_coverage);
    if(s.sampling_evaluation)showPolicySampling(panel,s.sampling_evaluation,s.game_gate_passed);
+   if(s.precision_training)showPrecisionTraining(panel,s.precision_training,s.numerical_audit);
    if(s.selection_evidence){
-    const audit=s.selection_evidence,note=el('p'),method=audit.kind==='sampling'?'Sampling':'Balanced correction';note.id='selectionEvidence';
+    const audit=s.selection_evidence,note=el('p'),method=audit.kind==='self_learning'?'Reward learning':audit.kind==='sampling'?'Sampling':'Balanced correction';note.id='selectionEvidence';
     note.textContent=audit.accepted?`${method} passed the predeclared comparative acceptance checks. This remains an experimental basic-scenario controller.`:`${method} did not pass acceptance. This live session uses the retained parent. The game table reports the latest matched comparison, including the rejected candidate.`;
     panel.querySelector('.table-scroll').before(note);
     if(!audit.accepted)$('activeModel').textContent=`Retained parent / ${method.toLowerCase()} rejected / frozen test`;
+    if(audit.kind==='self_learning'){
+     const detail=el('p');detail.textContent=`Latest candidate: ${audit.changed_edges.toLocaleString()} existing edge weights changed; decoder change L2 ${audit.decoder_change_l2.toExponential(3)}. ${audit.acceptance.reasons.join('. ')}. Candidate evidence: python -m flydoom --learning-candidate`;
+     note.after(detail);
+     if(audit.learning_protocol?.version>=5){const p=audit.learning_protocol;detail.append(document.createTextNode(` Latest training: ${p.training_episodes_per_policy} episodes per learner; ${p.rehearsal_frames} teacher frames; ${p.rehearsal_episodes_seen}/${p.rehearsal_episodes} episode prefixes rehearsed; ${p.successful_training_memory} successful TRAIN trajectories retained.`))}
+     if(!audit.accepted&&$('precisionEvidence')){
+      panel.querySelector('h2').textContent='Reward learning / retained model';
+      panel.querySelector('p').textContent='The latest reward-trained candidate failed acceptance. This session plays the corrected parent with frozen weights. The table compares the latest candidate and controls on the same reserved starts; the earlier numerical audit below describes the loaded parent.';
+      $('precisionEvidence').querySelector('h3').textContent='Loaded parent / earlier numerical-correction study';
+      $('precisionEvidence').prepend(el('p','The following audit belongs to the loaded parent. The main game table above reports the latest reward-learning comparison.'));
+     }
+    }
    }
   }
+  if(s.research_extensions&&Object.keys(s.research_extensions).length){const signature=Object.keys(s.research_extensions).sort().join(',');if($('researchExtensions')?.dataset.sections!==signature){$('researchExtensions')?.remove();showResearchExtensions($('adaptivePanel'),s.research_extensions);$('researchExtensions').dataset.sections=signature}}
   $('relayMode').textContent=s.running?'BOUNDED LEARNING':'PAUSED / FROZEN';
+  if(s.self_learning_progress){
+   let progress=$('offlineLearningProgress');if(!progress){progress=el('p');progress.id='offlineLearningProgress';$('adaptivePanel').prepend(progress)}
+   const p=s.self_learning_progress;progress.textContent=`Offline reward loop: ${p.status} / ${p.message||p.error||''}. This live session keeps its loaded weights; restart the desk to load a newly selected model.`;
+  }
   $('relayStatus').textContent=`${s.completed_pairs} completed pairs · ${s.remaining_episodes} budgeted episodes remaining · ${s.active_groups} active gain groups · ${s.changed_groups} changed · live gain change from checkpoint (L2): ${s.gain_delta_l2.toExponential(3)}${s.trial?` · ${s.trial.side} trial / seed ${s.trial.seed}`:''}`;
   const f=s.last_feedback;$('relayFeedback').textContent=f?`Last pair: return ${f.plus_return.toFixed(2)} versus ${f.minus_return.toFixed(2)}; gain update ${f.gain_delta_l2.toExponential(3)}. ${f.updated?'An update occurred; benefit still requires evaluation.':'Equal returns produced no update.'}`:'No complete paired reward comparison yet.';
   $('relayGains').textContent=s.largest_live_gain_changes.map(g=>`${g.cell_type} / ${g.channel}: gain=${g.gain.toFixed(5)}`).join('; ');
@@ -86,7 +103,7 @@ function showRewardTraining(panel,r,gatePassed){
  legacy.hidden=true;$('relayPath').closest('details').hidden=true;
  document.querySelector('.new p').textContent='Restart plays a fresh episode with this frozen reward-trained brain. Start paused prepares an episode for inspection. Training is a separate bounded experiment; both commands preserve the selected weights.';
  const evidence=el('section');evidence.id='rewardTrainingEvidence';
- if(r.continuation)evidence.append(el('p',`Continued checkpoint: ${r.parent}. ${r.continuation} Training caps: ${r.training_decisions} decisions / ${r.training_timeout_tics} tics per episode. Test caps: ${r.evaluation_decisions} decisions / ${r.evaluation_timeout_tics} tics. Longer training returns are not directly comparable to earlier shorter episodes.`));
+ if(r.continuation)evidence.append(el('p',`Continued checkpoint: ${r.parent}. ${r.continuation} Training caps: ${r.training_decisions} decisions / ${r.training_timeout_tics} tics per episode. Test caps: ${r.evaluation_decisions} decisions / ${r.evaluation_timeout_tics} tics. ${r.version>=4?'These are per-episode limits; training advances through its entire finite episode budget.':'Longer training returns are not directly comparable to earlier shorter episodes.'}`));
  evidence.append(el('h3','Reward learning / measured batch updates'),el('p',`${r.accepted_batches}/${r.batches} candidate batches accepted by the training-loss and drift checks. ${r.changed_edges.toLocaleString()} existing edge weights changed; decoder change L2 ${r.decoder_change_l2.toFixed(5)}. These checks do not establish game improvement.`));
  const table=el('table'),head=el('tr');['Policy / batch','Train return','Hits','Relay change','Decoder change','Teacher KL'].forEach(v=>head.append(el('th',v)));table.append(head);
  for(const [name,history] of Object.entries(r.history))for(const row of history){const tr=el('tr');[`${name} / ${row.batch}`,row.mean_return.toFixed(1),`${row.kills}/${row.episodes}`,row.relay_change_l2.toExponential(2),row.decoder_change_l2.toExponential(2),row.teacher_train_kl_after.toFixed(4)].forEach(v=>tr.append(el('td',v)));table.append(tr)}
@@ -102,7 +119,34 @@ function showRewardTraining(panel,r,gatePassed){
   for(const row of d.records){const tr=el('tr');[row.decision,row.action,`${(100*row.probability).toFixed(1)}%`,row.reward.toFixed(1),row.discounted_return.toFixed(4),row.predicted_value.toFixed(4),row.advantage_before_scaling.toFixed(4)].forEach(v=>tr.append(el('td',String(v))));t.append(tr)}trace.replaceChildren(t)};
  select.onchange=safe(load);credit.ontoggle=safe(async()=>{if(credit.open&&!trace.children.length)await load()});
  evidence.append(credit,el('p','Run and Restart test saved weights; they do not train. To continue learning from the latest completed weights, use the separate command below. It opens no browser. Episodes advance automatically within its finite batch budget; previous models are retained and the approved controller is unchanged.'),el('pre','.\\.venv\\Scripts\\python.exe -m flydoom.reward_training_v3'));
+ if(r.version>=4){
+  evidence.lastElementChild.textContent=r.version>=5?'.\\.venv\\Scripts\\python.exe -m flydoom.expanded_learning':'.\\.venv\\Scripts\\python.exe -m flydoom.self_learning --cycles 2';
+  $('evidenceScope').textContent='Corrected neural dynamics in collection, cached relay replay and live play. Matched tests sample each learned policy and compare joint training, decoder-only training, the retained incumbent and disconnected transmission.';
+  $('activeModel').textContent=`Corrected reward-trained brain / experimental / acceptance ${r.acceptance.passed?'passed':'failed'}`;
+  evidence.append(el('p',r.acceptance_rule),el('p',r.acceptance.passed?'Preferred experimental model updated; biological validation is separate.':r.acceptance.reasons.join('. ')));
+  if(r.version>=5)evidence.append(el('p',`Rehearsal coverage: ${r.rehearsal_episodes_seen}/${r.rehearsal_episodes} causal episode prefixes, ${r.rehearsal_frames} teacher-labelled frames. Every accepted step checks all TRAIN frames. ${r.successful_training_memory} complete successful TRAIN trajectories constrain policy drift; this is a retention proxy, not a guarantee of game success.`));
+ }
  panel.querySelector('.table-scroll').after(evidence);
+}
+
+function showResearchExtensions(panel,research){
+ const section=el('section');section.id='researchExtensions';section.append(el('h3','Additional controls / independent evidence'));
+ const table=(headers,rows)=>{const t=el('table'),h=el('tr');headers.forEach(v=>h.append(el('th',v)));t.append(h);for(const values of rows){const tr=el('tr');values.forEach(v=>tr.append(el('td',String(v))));t.append(tr)}const scroll=el('div');scroll.className='table-scroll';scroll.append(t);return scroll};
+ if(research.structure){
+  const s=research.structure,d=el('details');d.id='structureEvidence';d.append(el('summary','Connection topology and transfer scenarios'),el('p',`Audited candidate: ${s.checkpoint}. These results belong to that frozen candidate; a retained parent can be loaded above.`),el('p',s.scope));
+  d.append(table(['Connection condition','Hits / games','Mean return'],Object.entries(s.topology).map(([n,r])=>[n,`${r.kills}/${r.episodes}`,r.mean_return.toFixed(2)])));
+  d.append(el('p','Three signed degree-preserving relay rewires retain visual rows and incoming weight mass. They are frozen interventions; the rewired networks were not retrained.'));
+  const rows=[];for(const [policy,tasks] of Object.entries(s.transfer))for(const [task,r] of Object.entries(tasks))rows.push([policy,task,`${r.kills}/${r.episodes}`,r.deaths,r.engine_completions_alive,r.mean_forward_displacement.toFixed(1),r.mean_return.toFixed(2)]);
+  d.append(table(['Policy','Scenario','Kills / games','Deaths','Alive terminal','Forward displacement','Mean return'],rows),el('p','Transfer scenarios use native episode timeouts. Kills are not navigation success. No transfer episode was used for fitting or model selection.'));section.append(d);
+ }
+ if(research.physiology){
+  const s=research.physiology,d=el('details');d.id='independentPhysiology';d.append(el('summary','Independent calcium measurements / timing not validated'),el('p',s.scope));
+  const link=el('a','Pirogova & Borst / source study');link.href=s.paper;link.target='_blank';link.rel='noopener';d.append(link);
+  const rows=[];for(const [cell,conditions] of Object.entries(s.metrics))for(const [condition,r] of Object.entries(conditions))rows.push([cell,condition,r.recordings,r.measured_peak_ms.toFixed(1),r.predicted_peak_ms.toFixed(1),r.normalized_rmse_during_step.toFixed(3)]);
+  d.append(table(['Cell','Surround','Records','Measured Ca peak / ms','Uniform probe peak / ms','Shape RMSE'],rows));
+  s.blocking_gaps.forEach(v=>d.append(el('p',v)));d.append(el('p','Measurement peaks include calcium-indicator dynamics. They are not intrinsic neuron time constants, and no timing parameters were deployed from this audit.'));section.append(d);
+ }
+ panel.append(section);
 }
 
 function showRecoveryTraining(panel,r,gatePassed,coverage){
@@ -162,5 +206,32 @@ function showPolicySampling(panel,r,gatePassed){
  $('relayStart').closest('details').hidden=true;$('relayPath').closest('details').hidden=true;
  const evidence=el('section');evidence.id='samplingEvidence';
  evidence.append(el('h3','Matched deployment evidence'),el('p',`Final paired comparison: ${r.paired_final.gained_successes} additional successful starts, ${r.paired_final.lost_parent_successes} lost greedy successes; mean return change ${r.paired_final.mean_return_change.toFixed(2)}.`),el('p',r.acceptance_rule),el('p',r.scope));
+ panel.querySelector('.table-scroll').after(evidence);
+}
+
+function showPrecisionTraining(panel,r,numerics){
+ panel.querySelector('h2').textContent='Neural precision / corrected transmission';
+ panel.querySelector('p').textContent='Tiny evoked signals previously lost precision when added to the tonic baseline and subtracted again. An algebraically equivalent release calculation preserves these signals. Anatomical edges and response times are unchanged. The table measures gameplay separately from numerical accuracy.';
+ $('activeModel').textContent=`Corrected neural arithmetic / experimental / acceptance ${r.acceptance.passed?'passed':'failed'}`;
+ document.querySelector('.heading .intro').textContent='Native game image -> modeled eye -> corrected anatomical neural simulation -> sampled learned action. Laya is an offline teacher.';
+ $('trainingMethod').textContent=`${r.train_frames} verified TRAIN images were replayed through corrected neural dynamics. Fixed-budget Laya readout refits were compared on separate development games. Selected variant: ${r.selected}; decoder change L2 ${r.decoder_change_l2.toExponential(3)}. No synaptic weights or response times changed.`;
+ $('evidenceScope').textContent='Fresh matched final games compare the sampled old parent, the corrected candidate, and the corrected candidate without visual transmission. Numerical agreement with a float64 reference does not establish better gameplay or biological validity.';
+ $('feedbackNote').textContent='Frozen sampled policy. Run and Restart record outcomes without weight updates or teacher inference.';
+ document.querySelector('.new p').textContent='Restart creates another episode with the same corrected model. Pause and Step inspect individual decisions.';
+ $('relayStart').closest('details').hidden=true;$('relayPath').closest('details').hidden=true;
+ const evidence=el('section');evidence.id='precisionEvidence';
+ const a=r.acceptance,p=a.paired_parent,v=a.paired_vision;
+ evidence.append(el('h3','Numerical correction and game acceptance'),el('p',`Versus parent: ${p.gained_successes} recovered starts, ${p.lost_parent_successes} lost successes. Visual advantage: ${v.net_additional_hits} net additional hits versus disconnected input.`),el('p',r.acceptance_rule),el('p',a.passed?'Comparative acceptance passed; readiness and biological validation are separate.':a.reasons.join('. ')),el('p',r.scope));
+ if(numerics)evidence.append(el('p',`Numerical audit / ${numerics.frames} TRAIN frames: descending-state RMSE against float64 ${numerics.error.legacy.absolute_rmse.toExponential(3)} before, ${numerics.error.stable.absolute_rmse.toExponential(3)} after. ${(100*numerics.lost_nonzero_release_fraction).toFixed(1)}% of nonzero release values rounded to zero under the old expression; this is not a percentage of lost visual information.`));
+ const selection=el('details');selection.append(el('summary','Development selection / separate from final games'));
+ for(const [name,score] of Object.entries(r.development))selection.append(el('p',`${name}${name===r.selected?' / selected':''}: ${score.kills}/${score.episodes} hit episodes, mean return ${score.mean_return.toFixed(2)}.`));
+ evidence.append(selection);
+ for(const details of panel.querySelectorAll('details')){
+  if(details.querySelector('summary')?.textContent==='Repeat Laya teaching'){
+   details.querySelector('summary').textContent='Repeat the corrected-arithmetic experiment';
+   details.querySelector('p').textContent='Reuses verified Laya TRAIN probabilities and reserves fresh development and final starts. Earlier models and caches remain intact. This command trains; Run and Restart only play.';
+   details.querySelector('pre').textContent='.\\.venv\\Scripts\\python.exe -m flydoom.precision_training';
+  }
+ }
  panel.querySelector('.table-scroll').after(evidence);
 }

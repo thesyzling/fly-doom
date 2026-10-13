@@ -19,7 +19,7 @@ class AdaptiveSession(IntegratedSession):
         self.scenario=scenario;self.decision_limit=150 if scenario=='deadly_corridor' else 75
         self.relay_learner=None;self.relay_trial=None;self.auto_learning=False;self.remaining=0
         super().__init__(checkpoint,output)
-        if self.report.get('schema')!=SCHEMA:
+        if self.report.get('schema') not in (SCHEMA, 'stable_sensorimotor_v1'):
             self.close();raise ValueError('Adaptive play requires an eight-action research checkpoint')
         visual=load_any('runs/retinal-control-v1')[0].ids
         self.relay_learner=RewardPlasticity(self.encoder,visual,seed=111026)
@@ -98,6 +98,11 @@ class AdaptiveSession(IntegratedSession):
 
     def start_learning(self,pairs,scenario):
         with self.condition:
+            if self.report.get('reward_training',{}).get('version',0)>=4:
+                module='expanded_learning' if self.report['reward_training']['version']>=5 else 'self_learning'
+                raise ValueError(f'Run python -m flydoom.{module} for bounded corrected reward learning; this desk stays frozen')
+            if self.report.get('precision_training'):
+                raise ValueError('Corrected arithmetic requires a compatible offline trainer; this session is frozen')
             if self.report.get('reward_training') or self.report.get('recovery_training') or self.report.get('sampling_evaluation'):
                 raise ValueError('This desk tests a frozen reward-trained checkpoint. Run python -m flydoom.reward_training_v3 to continue learned weights in a bounded training experiment.')
             if type(pairs)!=int or not 1<=pairs<=10 or scenario not in TASKS:raise ValueError('Choose 1 to 10 pairs and a supported scenario')
@@ -142,6 +147,8 @@ class AdaptiveSession(IntegratedSession):
 
     def adaptive_status(self):
         with self.condition:
+            from flydoom.research_evidence import extension_evidence
+            progress_root=Path('runs/self-learning-expanded') if Path('runs/self-learning-expanded/progress.json').exists() else Path('runs/self-learning')
             learner=self.relay_learner
             groups=[]
             for index in np.argsort(-abs(learner.center-1).ravel())[:12]:
@@ -160,16 +167,24 @@ class AdaptiveSession(IntegratedSession):
                     'checkpoint':str(self.checkpoint),'live_state':str(self.output/'relay-learner.json'),
                     'four_steps':self.report['four_steps'],'benchmark':(getattr(self,'selection_evidence',None) or {}).get('test_by_task',self.report['test_by_task']),
                     'selection_evidence':getattr(self,'selection_evidence',None),
+                    'self_learning_progress':json.loads((progress_root/'progress.json').read_text(encoding='utf-8')) if (progress_root/'progress.json').exists() else None,
+                    'research_extensions':extension_evidence(),
                     'teacher_training':self.report.get('laya_training'),
                     'reward_training':self.report.get('reward_training'),
                     'recovery_training':self.report.get('recovery_training'),
                     'sampling_evaluation':self.report.get('sampling_evaluation'),
+                    'precision_training':self.report.get('precision_training'),
+                    'numerical_audit':json.loads((self.checkpoint/'numerical-audit.json').read_text(encoding='utf-8')) if self.report.get('precision_training') else None,
                     'game_gate_passed':bool(self.report.get('game_gate_passed',False)),
                     'evidence':self.adaptive_evidence,
                     'biological_validation_passed':False,'promoted':False}
 
     def metadata(self):
         value=super().metadata();value['adaptive']=True
+        if self.report.get('neural_numerics'):
+            value['neural_numerics']=self.report['neural_numerics']
+        if self.report.get('decision_sampling'):
+            value['decision_sampling']=self.report['decision_sampling']
         value['selection_evidence']=getattr(self,'selection_evidence',None)
         value['teacher']['role']='Inherited offline Laya teacher; eight-action curriculum uses training-only engine annotations. Laya comparison supports the original six actions.'
         if self.report.get('laya_training'):
@@ -185,9 +200,17 @@ class AdaptiveSession(IntegratedSession):
             value['sampling_evaluation']=self.report['sampling_evaluation']
             value['decision_sampling']=self.report['decision_sampling']
             value['teacher']['role']='Offline Laya teacher. Frozen live actions sample the learned reward-trained neural policy; no teacher call or weight update.'
+        if self.report.get('precision_training'):
+            value['precision_training']=self.report['precision_training']
+            value['neural_numerics']=self.report['neural_numerics']
+            value['numerical_audit']=json.loads((self.checkpoint/'numerical-audit.json').read_text(encoding='utf-8'))
+            value['decision_sampling']=self.report['decision_sampling']
+            value['teacher']['role']='Offline Laya supervision on corrected neural states. Frozen live play uses the eye and circuit only.'
         return value
 
     def resume_relay(self,path):
+        if self.report.get('neural_numerics'):
+            raise ValueError('Legacy relay optimization cannot resume into corrected neural arithmetic')
         path=Path(path)
         with self.condition:
             if self.busy or not self.paused or self.sequence:raise ValueError('Resume before the first live decision')

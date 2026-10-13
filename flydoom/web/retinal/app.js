@@ -46,6 +46,7 @@ function paint(s){stopPlayback();shown=s;frame();playFrames(s);$('decision').tex
  if(meta.reward_training)$('feedbackNote').textContent='Frozen test of a reward-trained brain. Recorded training episodes below show delayed reward credit. Run and Restart do not update weights.';
  if(meta.recovery_training)$('feedbackNote').textContent='Frozen test after Laya corrections on student-visited states. Prior reward learning is retained. Run and Restart do not update weights.';
  if(meta.sampling_evaluation)$('feedbackNote').textContent='Frozen reward-trained policy. Actions sample the neural probabilities; sampling does not update weights or invoke Laya.';
+  if(meta.precision_training)$('feedbackNote').textContent='Frozen corrected neural simulation. Actions sample the learned probabilities; Run and Restart never update weights or invoke Laya.';
  $('timing').textContent=s.sequence&&s.timing?`Encoder ${s.encoding_ms.toFixed(1)} ms / archive ${s.timing.archive_ms.toFixed(1)} ms / ${s.timing.total_ms.toFixed(1)} ms before final JSON publication. ${s.action_frames?.length||0} genuine engine frames per action. Neural window remains 114.3 ms.`:s.sequence?`Encoder ${s.encoding_ms.toFixed(1)} ms / decision computation ${s.wall_ms.toFixed(1)} ms (excludes archive write). Neural clock ${s.neural_clock_ms.toFixed(1)} ms. State updates use a fixed 114.3 ms response window.`:'';
  $('runPath').textContent=s.run;trace();history(s.latest_sequence);paintIntegrated(s)
 }
@@ -76,7 +77,7 @@ async function poll(){
   const s=await api('/api/state'+(previous?'?since='+previous.sequence+'&run='+encodeURIComponent(previous.run):''));
   if(generation!==episodeGeneration)return;
   latestStatus=s;
-  $('testMode').textContent=meta.sampling_evaluation?'FROZEN SAMPLED POLICY: eye -> neural probabilities -> sampled action. No live learning or teacher.':meta.recovery_training?'FROZEN RECOVERY TEST: eye -> neural circuit -> action. No live teacher or weight updates.':meta.reward_training?'FROZEN RL TEST: eye -> neural circuit -> action. No live teacher or weight updates.':meta.laya_training?'TEACHER-FREE PLAY: eye -> neural circuit -> action. Laya is used for training.':meta.adaptive?'NEURAL CONTROL: decoder fixed; see Relay learning for between-episode graph updates':s.learning?'EXPLORATION: actions are sampled and weights change':'FROZEN TEST: highest-probability action, weights fixed';
+  $('testMode').textContent=meta.precision_training?'FROZEN PRECISION TEST: corrected eye-driven neural transmission; sampled actions, no live learning.':meta.sampling_evaluation?'FROZEN SAMPLED POLICY: eye -> neural probabilities -> sampled action. No live learning or teacher.':meta.recovery_training?'FROZEN RECOVERY TEST: eye -> neural circuit -> action. No live teacher or weight updates.':meta.reward_training?'FROZEN RL TEST: eye -> neural circuit -> action. No live teacher or weight updates.':meta.laya_training?'TEACHER-FREE PLAY: eye -> neural circuit -> action. Laya is used for training.':meta.adaptive?'NEURAL CONTROL: decoder fixed; see Relay learning for between-episode graph updates':s.learning?'EXPLORATION: actions are sampled and weights change':'FROZEN TEST: highest-probability action, weights fixed';
   if(connectionLost){connectionLost=false;$('error').hidden=true;}
   $('connection').textContent=s.busy?'COMPUTING':'CONNECTED';
   episodeStatus(s);

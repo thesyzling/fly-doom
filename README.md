@@ -2,13 +2,53 @@
 
 A research project to train a model based on the real fruit fly connectome to control Doom.
 
-**Status: the integrated visual-control research desk is working end to end.** The retained Laya Vision model, real anatomical map, trained visual circuit, six-action Doom decoder, live reward feedback and recorded-decision inspection now share one workspace. This is a completed software integration, not a claim of biological validation or strong Doom performance.
+**Status: the integrated visual-control research desk is working end to end.** The retained Laya Vision model, real anatomical map, trained visual circuit, eight-action research decoder, recorded reward feedback and recorded-decision inspection now share one workspace. This is a completed software integration, not a claim of biological validation or strong Doom performance.
 
 ## Laya teaches; the brain plays through its own eye
 
+**Latest expanded experiment (October 13):** teacher rehearsal now covers all 833 stored TRAIN frames from 32 episodes. Eight reward-learning batches used 32 new games per learner; successful training trajectories constrain forgetting. The joint candidate hit **20/32 (62.5%)** on fresh matched final starts, versus **14/32 (43.75%)** for the retained parent, **15/32** for decoder-only learning and **10/32** with transmission disconnected. It gained nine parent failures but lost three parent successes and failed the preliminary gate, so it remains an inspectable research candidate. The preferred model was retained. Different experiments use different starts; their percentages are not a learning curve.
+
+```powershell
+# Continue the expanded finite training protocol:
+.\.venv\Scripts\python.exe -m flydoom.expanded_learning
+# Inspect the completed expanded candidate without retraining:
+.\.venv\Scripts\python.exe -m flydoom --learning-candidate
+# Play the model retained by acceptance checks:
+.\.venv\Scripts\python.exe -m flydoom --self-trained
+```
+
+Run and Restart keep weights frozen. The desk also displays completed topology/transfer audits and independent calcium-response measurements, with their checkpoint provenance and biological limitations. Rehearsal labels were reused from existing verified Laya data; no teacher runs during play. [Expanded protocol and results](docs/RESEARCH.md#expanded-retention-topology-and-independent-physiology-october-13-2026).
+
+**Corrected reward learning now has a finite automatic cycle.** It collects its own game experience, updates shared anatomical relay gains and the action readout using game rewards, compares four frozen policies, and retains the preferred model unless both acceptance stages pass. Laya supplies stored TRAIN rehearsal targets, never live actions. Continuing research weights and preferred playback weights have separate verified pointers.
+
+```powershell
+# Train two bounded cycles; no browser opens during training:
+.\.venv\Scripts\python.exe -m flydoom.self_learning --cycles 2
+# Play the preferred model after completed acceptance checks:
+.\.venv\Scripts\python.exe -m flydoom --self-trained
+# Inspect the latest candidate and its reward-credit records, even if rejected:
+.\.venv\Scripts\python.exe -m flydoom --learning-candidate
+```
+
+Defaults are two batches of two training episodes per learner per cycle, plus eight gate and 32 final games for each of four conditions. `--cycles`, `--batches`, `--episodes-per-batch` and `--test-episodes` set finite budgets. Another training invocation continues the saved research cursor; Run and Restart only play frozen weights. A rejected candidate remains available for research without replacing the preferred model. This implements an experimental self-improvement mechanism; successful weight updates alone do not prove improved play. [Protocol and limits](docs/RESEARCH.md#corrected-reward-learning-and-guarded-cycles-october-13-2026).
+
+**Completed two-cycle pilot (October 13): both candidates failed full acceptance, so the corrected parent remains preferred.** On the latest 32 matched starts, joint learning hit **21/32 (65.625%)**, the retained parent **20/32 (62.5%)**, decoder-only learning **18/32 (56.25%)**, and disconnected transmission **11/32 (34.375%)**. The joint model gained four parent failures but lost three parent successes. Its gate visual margin, required two extra final hits and retention limit did not all pass. The preceding cycle scored 19/32 versus its parent's 18/32 on different starts; these two percentages are not a before/after comparison. Each cycle changed 98,141 existing edge values through 173 shared gain parameters and updated the readout. The entire pilot added only eight training episodes / 316 decisions per learner, with 69 rehearsal frames from one complete stored Laya TRAIN episode; this is not full training or broad teaching coverage. All 320 frozen gate/final games completed. Verification includes 380 software tests, 206 exact native training-decision replays, frozen live/restart checks and real browser checks. No caches or previous models were removed.
+
+**Arithmetic experiment (October 12): a neural arithmetic defect was corrected, but target-hit performance did not improve.** Tiny evoked signals were lost by float32 baseline addition/subtraction. The equivalent stable calculation reduced descending-state error against a float64 reference about 13,500-fold on 100 TRAIN frames. After replaying 833 verified Laya TRAIN images and fitting the action readout, fresh matched final results were **22/32 old sampled parent, 22/32 corrected candidate, 16/32 corrected candidate with transmission disconnected**. Mean returns were -102.47, -98.66 and -138.69. The candidate gained two starts and lost two. Its visual-control margin passed, but the required extra hits versus parent did not; neither the preferred fallback nor the default controller was replaced. This corrects simulated transmission, not biological validity or all gameplay failures.
+
+Open the completed corrected experiment without retraining:
+
+```powershell
+.\.venv\Scripts\python.exe -m flydoom --precision-student
+```
+
+Use Run, Pause, Single step and Restart episode. **Training evidence** shows the numerical audit, development choice and all three final conditions. Laya remains an offline teacher; live decisions use the eye-driven neural circuit and a frozen sampled readout. This flag explicitly opens the experiment even though game acceptance failed. Old checkpoints retain their original arithmetic; corrected checkpoints use a separate schema and reject legacy training loaders. [Protocol, limits and verification](docs/RESEARCH.md#correcting-small-signal-neural-arithmetic-october-12-2026).
+
+To repeat the bounded offline experiment, use `python -m flydoom.precision_training`. It reuses stored Laya labels and reserves fresh starts; it does not resume a live episode or run automatic online reinforcement learning. Earlier checkpoints and caches are preserved.
+
 Failure diagnosis and corrective teaching are available in separate tools:
 
-**Latest measured deployment comparison:** on the same 32 reserved starts, the retained greedy brain hit 13 targets (40.6%), its unchanged learned policy with categorical sampling hit 17 (53.1%), and the same sampler with visual input disconnected hit 14 (43.8%). Sampling gained seven successes and lost three. It failed the predeclared retention and visual-control margins; no preferred/default model was replaced. This is a deployment experiment, not new successful weight training. The three balanced readout fits below were also rejected on development gameplay.
+**Previous deployment comparison (different starts):** on the same 32 reserved starts, the retained greedy brain hit 13 targets (40.6%), its unchanged learned policy with categorical sampling hit 17 (53.1%), and the same sampler with visual input disconnected hit 14 (43.8%). Sampling gained seven successes and lost three. It failed the predeclared retention and visual-control margins; no preferred/default model was replaced. This is a deployment experiment, not new successful weight training. The three balanced readout fits below were also rejected on development gameplay.
 
 To explicitly inspect the sampled experiment with frozen weights:
 
